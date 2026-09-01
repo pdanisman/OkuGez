@@ -17,7 +17,7 @@ OGRENCILER_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vTjaErnK01S9u8
 KITAPLAR_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vTjaErnK01S9u8xTncNbrOBKdqbvFdp90XlL8zTZddMjDWdFVbj130XnhmBuIbGSpX-jBXkpZ9FZ2tk/pub?gid=1390307822&single=true&output=csv"
 KAYITLAR_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vTjaErnK01S9u8xTncNbrOBKdqbvFdp90XlL8zTZddMjDWdFVbj130XnhmBuIbGSpX-jBXkpZ9FZ2tk/pub?gid=509265349&single=true&output=csv"
 
-# --- HARİTA API AYARI (Kendi Anahtarın) ---
+# --- HARİTA API AYARI (Kendi Anahtarınız) ---
 MAPTILER_API_KEY = "EpjYdmP1Sas39ynJVbrR"
 
 # --- RENK ÇEVİRİ SÖZLÜĞÜ ---
@@ -101,8 +101,8 @@ if sayfa == "🗺️ Dünya Haritası ve Keşifler":
         kitap_listesi = ["Tüm Kitaplar / Şehirler"] + sorted(list(df_kitap['Kitap_Adi_Sehir'].dropna().unique()))
         secilen_kitap = st.selectbox("📚 Kitap / Şehir Seçin:", kitap_listesi)
 
-    # API Kontrollü Özel Harita (Üzerinde yazı olmayan, hızlı yüklenen temiz altlık)
-    tiles_url = f"https://api.maptiler.com/maps/dataviz-light/{{z}}/{{x}}/{{y}}.png?key={MAPTILER_API_KEY}"
+    # API Kontrollü Özel Harita (Yazısız, sınırsız, kağıt dokulu "Backdrop" stili)
+    tiles_url = f"https://api.maptiler.com/maps/backdrop/256/{{z}}/{{x}}/{{y}}.png?key={MAPTILER_API_KEY}"
     m = folium.Map(
         location=[25, 10], 
         zoom_start=2, 

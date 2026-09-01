@@ -17,8 +17,20 @@ OGRENCILER_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vTjaErnK01S9u8
 KITAPLAR_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vTjaErnK01S9u8xTncNbrOBKdqbvFdp90XlL8zTZddMjDWdFVbj130XnhmBuIbGSpX-jBXkpZ9FZ2tk/pub?gid=1390307822&single=true&output=csv"
 KAYITLAR_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vTjaErnK01S9u8xTncNbrOBKdqbvFdp90XlL8zTZddMjDWdFVbj130XnhmBuIbGSpX-jBXkpZ9FZ2tk/pub?gid=509265349&single=true&output=csv"
 
+# --- RENK ÇEVİRİ SÖZLÜĞÜ ---
+RENK_SOZLUGU = {
+    "Mavi": "blue", "Turuncu": "orange", "Mor": "purple", 
+    "Kırmızı": "red", "Yeşil": "green", "Sarı": "beige", 
+    "Pembe": "pink", "Siyah": "black", "Gri": "gray",
+    "Açık Mavi": "lightblue", "Lacivert": "darkblue",
+    "Koyu Kırmızı": "darkred", "Açık Yeşil": "lightgreen"
+}
+
+def renk_cevir(turkce_renk):
+    return RENK_SOZLUGU.get(str(turkce_renk).strip().title(), "blue")
+
 # --- VERİ ÇEKME FONKSİYONU ---
-@st.cache_data(ttl=60) # 60 saniyede bir verileri günceller
+@st.cache_data(ttl=60)
 def verileri_yukle():
     try:
         df_ogrenci = pd.read_csv(OGRENCILER_URL)
@@ -47,19 +59,19 @@ def verileri_yukle():
 
 df_ogrenci, df_kitap, df_kayit = verileri_yukle()
 
-# --- HESAPLAMA VE YARDIMCI FONKSİYONLAR ---
+# --- HESAPLAMA YARDIMCI FONKSİYONLARI ---
 def unvan_ve_arac_belirle(km):
     if km < 100:
-        return "İlk Adım Gezgini 🚶", "Vosvos (Küçük Araç)", "red", 100 - km
+        return "İlk Adım Gezgini 🚶", "Vosvos", 100 - km
     elif km < 500:
-        return "Meraklı Gezgin ⛺", "Çadırlı Karavan", "orange", 500 - km
+        return "Meraklı Gezgin ⛺", "Çadırlı Karavan", 500 - km
     elif km < 1000:
-        return "Deneyimli Gezgin 🚐", "Süslü Motokaravan", "blue", 1000 - km
+        return "Deneyimli Gezgin 🚐", "Süslü Motokaravan", 1000 - km
     else:
-        return "Usta Gezgin 🚀", "Dev Efsane Karavan", "purple", 0
+        return "Usta Gezgin 🚀", "Dev Efsane Karavan", 0
 
-# Öğrenci Bazlı KM ve Veri Birleştirme
 if not df_kayit.empty and not df_kitap.empty:
+    # Okuma sırasını korumak için inner join yapıyoruz
     df_birlesik = pd.merge(df_kayit, df_kitap, left_on='Okudugu_Kitap', right_on='Kitap_Adi_Sehir', how='inner')
 else:
     df_birlesik = pd.DataFrame()
@@ -78,7 +90,6 @@ if sayfa == "🗺️ Dünya Haritası ve Keşifler":
     st.title("🌍 Gezgin Karavanlar Dünya Haritası")
     st.markdown("Öğrencilerimizin okudukları kitaplarla dünya üzerinde katettiği rotaları buradan inceleyebilirsiniz.")
 
-    # Filtreleme Alanı
     col1, col2, col3 = st.columns(3)
     
     with col1:
@@ -93,87 +104,105 @@ if sayfa == "🗺️ Dünya Haritası ve Keşifler":
         kitap_listesi = ["Tüm Kitaplar / Şehirler"] + sorted(list(df_kitap['Kitap_Adi_Sehir'].dropna().unique()))
         secilen_kitap = st.selectbox("📚 Kitap / Şehir Seçin:", kitap_listesi)
 
-    # Harita Başlangıç Konumu
-    m = folium.Map(location=[20, 0], zoom_start=2, tiles="OpenStreetMap")
+    # Harita Başlangıç Konumu (CartoDB Positron daha sade bir arka plan sunar, renkler daha net görünür)
+    m = folium.Map(location=[25, 10], zoom_start=2, tiles="CartoDB positron")
 
-    # SENARYO 1: Özel Bir Öğrenci Seçildiyse (Rota ve Karavan İlerlemesi)
-    if secilen_ogrenci != "Tüm Öğrenciler":
-        ogrenci_no = int(secilen_ogrenci)
-        ogrenci_kayitlari = df_birlesik[df_birlesik['Ogrenci_No'] == ogrenci_no]
-        
-        ogrenci_renk_row = df_ogrenci[df_ogrenci['Ogrenci_No'] == ogrenci_no]
-        karavan_rengi = ogrenci_renk_row['Karavan_Rengi'].values[0] if not ogrenci_renk_row.empty else 'blue'
+    # Kıtaları Renklendirme (GeoJSON Kullanarak)
+    KITALAR_GEOJSON_URL = "https://gist.githubusercontent.com/hrbrmstr/91ea5cc9474286c72838/raw/f3fde312c9b8168af6254ce1410dd4dda4a31941/continents.json"
+    
+    def kita_stili(feature):
+        kita_renkleri = {
+            "Asia": "#ffb3ba", "Europe": "#baffc9", "Africa": "#ffdfba",
+            "North America": "#bae1ff", "South America": "#ffffba", "Oceania": "#e8baff"
+        }
+        kita_adi = feature['properties'].get('CONTINENT', 'Unknown')
+        return {
+            'fillColor': kita_renkleri.get(kita_adi, '#ffffff'),
+            'color': '#888888',
+            'weight': 1,
+            'fillOpacity': 0.35
+        }
 
-        toplam_km = ogrenci_kayitlari['Sayfa_Sayisi_KM'].sum()
-        unvan, arac, simge_renk, _ = unvan_ve_arac_belirle(toplam_km)
+    try:
+        folium.GeoJson(KITALAR_GEOJSON_URL, name="Kıtalar", style_function=kita_stili).add_to(m)
+    except Exception:
+        pass # Eğer github gist bağlantısı anlık koparsa harita çökmesin
 
-        st.subheader(f"🚐 Öğrenci No: **{ogrenci_no}** | Unvan: **{unvan}** | Araç: **{arac}** | Toplam: **{toplam_km} KM**")
+    # Kitapları (Şehirleri) Metin Olarak Ekleme
+    filtreli_kitaplar = df_kitap.copy()
+    if secilen_kita != "Tüm Kıtalar / Türler":
+        filtreli_kitaplar = filtreli_kitaplar[filtreli_kitaplar['Tur_Kita'] == secilen_kita]
+    if secilen_kitap != "Tüm Kitaplar / Şehirler":
+        filtreli_kitaplar = filtreli_kitaplar[filtreli_kitaplar['Kitap_Adi_Sehir'] == secilen_kitap]
 
-        if not ogrenci_kayitlari.empty:
-            rota_koordinatlari = []
-            
-            for idx, row in ogrenci_kayitlari.iterrows():
-                if pd.notnull(row['Enlem']) and pd.notnull(row['Boylam']):
-                    koordinat = [row['Enlem'], row['Boylam']]
-                    rota_koordinatlari.append(koordinat)
-                    
-                    folium.Marker(
-                        location=koordinat,
-                        popup=f"Kitap: {row['Kitap_Adi_Sehir']}<br>Tür: {row['Tur_Kita']}<br>KM: {row['Sayfa_Sayisi_KM']}",
-                        tooltip=f"{row['Kitap_Adi_Sehir']}",
-                        icon=folium.Icon(color="green", icon="book", prefix="fa")
-                    ).add_to(m)
-
-            # Rota Çizgisi Çizme
-            if len(rota_koordinatlari) > 1:
-                folium.PolyLine(
-                    rota_koordinatlari,
-                    color="blue",
-                    weight=3,
-                    opacity=0.8,
-                    tooltip=f"Öğrenci {ogrenci_no} Rotası"
-                ).add_to(m)
-
-            # Son Konuma Karavan İkonu Koyma
-            son_konum = rota_koordinatlari[-1]
+    for idx, row in filtreli_kitaplar.iterrows():
+        if pd.notnull(row['Enlem']) and pd.notnull(row['Boylam']):
             folium.Marker(
-                location=son_konum,
-                popup=f"<b>Öğrenci {ogrenci_no} Mevcut Konumu</b><br>Unvan: {unvan}",
-                tooltip=f"Karavan No: {ogrenci_no} ({arac})",
-                icon=folium.Icon(color=simge_renk, icon="car", prefix="fa")
+                location=[row['Enlem'], row['Boylam']],
+                icon=folium.DivIcon(
+                    html=f"""<div style="
+                        font-family: 'Comic Sans MS', cursive, sans-serif; 
+                        font-size: 12px; 
+                        font-weight: bold; 
+                        color: #2c3e50; 
+                        background-color: rgba(255, 255, 255, 0.85); 
+                        padding: 3px 6px; 
+                        border-radius: 8px;
+                        border: 2px solid #34495e;
+                        white-space: nowrap;
+                        text-align: center;
+                        box-shadow: 2px 2px 5px rgba(0,0,0,0.3);
+                        ">{row['Kitap_Adi_Sehir']}</div>"""
+                )
             ).add_to(m)
 
-    # SENARYO 2: Genel Görünüm (Filtrelere Göre)
-    else:
-        filtreli_kitaplar = df_kitap.copy()
-        
-        if secilen_kita != "Tüm Kıtalar / Türler":
-            filtreli_kitaplar = filtreli_kitaplar[filtreli_kitaplar['Tur_Kita'] == secilen_kita]
-        if secilen_kitap != "Tüm Kitaplar / Şehirler":
-            filtreli_kitaplar = filtreli_kitaplar[filtreli_kitaplar['Kitap_Adi_Sehir'] == secilen_kitap]
+    # --- ROTA VE KARAVAN GÖSTERİMİ ---
+    if not df_birlesik.empty:
+        # Hangi öğrencilerin çizileceğini belirle
+        gosterilecek_ogrenciler = [int(secilen_ogrenci)] if secilen_ogrenci != "Tüm Öğrenciler" else df_birlesik['Ogrenci_No'].unique()
 
-        for idx, row in filtreli_kitaplar.iterrows():
-            if pd.notnull(row['Enlem']) and pd.notnull(row['Boylam']):
-                # Bu kitabı kimler okumuş bulalım
-                okuyanlar = df_kayit[df_kayit['Okudugu_Kitap'] == row['Kitap_Adi_Sehir']]['Ogrenci_No'].tolist()
-                okuyanlar_str = ", ".join(map(str, okuyanlar)) if okuyanlar else "Henüz kimse ziyaret etmedi."
+        for ogrenci_no in gosterilecek_ogrenciler:
+            ogrenci_kayitlari = df_birlesik[df_birlesik['Ogrenci_No'] == ogrenci_no]
+            
+            if not ogrenci_kayitlari.empty:
+                # Öğrencinin karavan rengini Excel'den çekip İngilizceye çevir
+                renk_satiri = df_ogrenci[df_ogrenci['Ogrenci_No'] == ogrenci_no]
+                tr_renk = renk_satiri['Karavan_Rengi'].values[0] if not renk_satiri.empty else 'Mavi'
+                karavan_rengi = renk_cevir(tr_renk)
 
-                popup_icerik = f"""
-                <b>Şehir/Kitap:</b> {row['Kitap_Adi_Sehir']}<br>
-                <b>Kıta/Tür:</b> {row['Tur_Kita']}<br>
-                <b>KM Değeri:</b> {row['Sayfa_Sayisi_KM']} KM<br>
-                <b>Ziyaret Eden Gezginler (Öğrenci No):</b> {okuyanlar_str}
-                """
-                
-                folium.Marker(
-                    location=[row['Enlem'], row['Boylam']],
-                    popup=folium.Popup(popup_icerik, max_width=300),
-                    tooltip=f"{row['Kitap_Adi_Sehir']} ({len(okuyanlar)} Gezgin)",
-                    icon=folium.Icon(color="red" if okuyanlar else "gray", icon="location-dot", prefix="fa")
-                ).add_to(m)
+                # Rota koordinatlarını topla
+                rota_koordinatlari = []
+                for idx, row in ogrenci_kayitlari.iterrows():
+                    if pd.notnull(row['Enlem']) and pd.notnull(row['Boylam']):
+                        rota_koordinatlari.append([row['Enlem'], row['Boylam']])
 
-    # Haritayı Ekrana Bas
-    st_folium(m, width=1200, height=600)
+                # Çizgi çizimi (Sadece 1'den fazla kitap okuduysa rota çizilebilir)
+                if len(rota_koordinatlari) > 1:
+                    folium.PolyLine(
+                        rota_koordinatlari,
+                        color=karavan_rengi,
+                        weight=3 if secilen_ogrenci != "Tüm Öğrenciler" else 2,
+                        opacity=0.8 if secilen_ogrenci != "Tüm Öğrenciler" else 0.5, # Tüm öğrencilerdeyken çizgiler birbirine karışmasın diye şeffaflık artırıldı
+                        dash_array='5, 5', # Kesik çizgilerle yol efekti
+                        tooltip=f"Öğrenci {ogrenci_no} Rotası"
+                    ).add_to(m)
+
+                # Son kitaba karavan ikonu yerleştir
+                if rota_koordinatlari:
+                    son_konum = rota_koordinatlari[-1]
+                    son_kitap = ogrenci_kayitlari.iloc[-1]
+                    toplam_km = ogrenci_kayitlari['Sayfa_Sayisi_KM'].sum()
+                    unvan, arac, _ = unvan_ve_arac_belirle(toplam_km)
+
+                    # Öğrenci numarasını ve bilgilerini içeren Karavan İkonu
+                    folium.Marker(
+                        location=son_konum,
+                        popup=f"<b>Öğrenci No:</b> {ogrenci_no}<br><b>Unvan:</b> {unvan}<br><b>Araç:</b> {arac}<br><b>Son Durak:</b> {son_kitap['Kitap_Adi_Sehir']}<br><b>Toplam KM:</b> {toplam_km}",
+                        tooltip=f"No: {ogrenci_no} ({tr_renk} Karavan)",
+                        icon=folium.Icon(color=karavan_rengi, icon="caravan", prefix="fa")
+                    ).add_to(m)
+
+    st_folium(m, width=1200, height=650)
 
 # ==========================================
 # 2. SAYFA: GEZGİNLER KULÜBÜ (UNVANLAR & MİLLER)
@@ -182,26 +211,20 @@ elif sayfa == "🏆 Gezginler Kulübü":
     st.title("🏆 Gezginler Kulübü ve Seviye Tablosu")
     st.markdown("Öğrencilerimizin toplam katettiği kilometreler, unvanları ve uçak bileti alabilecekleri kullanılabilir milleri aşağıdadır.")
 
-    # Öğrenci Bazlı KM Hesaplama
     if not df_birlesik.empty:
         ogrenci_km = df_birlesik.groupby('Ogrenci_No')['Sayfa_Sayisi_KM'].sum().reset_index()
     else:
         ogrenci_km = pd.DataFrame(columns=['Ogrenci_No', 'Sayfa_Sayisi_KM'])
 
-    # Tüm öğrenciler listesiyle birleştirme (Okuma yapmayanlar da görünsün)
-    kulup_df = pd.merge(df_ogrenci[['Ogrenci_No', 'Harcanan_Mil']], ogrenci_km, on='Ogrenci_No', how='left')
+    kulup_df = pd.merge(df_ogrenci[['Ogrenci_No', 'Harcanan_Mil', 'Karavan_Rengi']], ogrenci_km, on='Ogrenci_No', how='left')
     kulup_df['Sayfa_Sayisi_KM'] = kulup_df['Sayfa_Sayisi_KM'].fillna(0)
 
-    # Unvan ve Mil Hesaplamaları
-    unvanlar = []
-    araclar = []
-    kalan_kmler = []
-    kalan_miller = []
+    unvanlar, araclar, kalan_kmler, kalan_miller = [], [], [], []
 
     for idx, row in kulup_df.iterrows():
         km = row['Sayfa_Sayisi_KM']
         harcanan = row['Harcanan_Mil']
-        unvan, arac, _, kalan = unvan_ve_arac_belirle(km)
+        unvan, arac, kalan = unvan_ve_arac_belirle(km)
         
         unvanlar.append(unvan)
         araclar.append(arac)
@@ -214,11 +237,9 @@ elif sayfa == "🏆 Gezginler Kulübü":
     kulup_df['Uçuşa Hazır Mil'] = kalan_miller
     kulup_df['Sonraki Seviyeye Kalan KM'] = kalan_kmler
 
-    # KVKK: Sadece Ogrenci_No göster, isim sütununu temizle
-    gosterilecek_df = kulup_df[['Ogrenci_No', 'Unvan', 'Karavan Tipi', 'Toplam KM', 'Uçuşa Hazır Mil', 'Sonraki Seviyeye Kalan KM']]
+    gosterilecek_df = kulup_df[['Ogrenci_No', 'Karavan_Rengi', 'Unvan', 'Karavan Tipi', 'Toplam KM', 'Uçuşa Hazır Mil', 'Sonraki Seviyeye Kalan KM']]
     gosterilecek_df = gosterilecek_df.sort_values(by='Toplam KM', ascending=False).reset_index(drop=True)
 
-    # Tabloyu Renkli Göster
     st.dataframe(gosterilecek_df, use_container_width=True)
 
 # ==========================================
@@ -232,7 +253,6 @@ elif sayfa == "📊 Seyahat İstatistikleri":
         toplam_okunan_kitap = len(df_birlesik)
         en_populer_tur = df_birlesik['Tur_Kita'].mode()[0] if not df_birlesik['Tur_Kita'].empty else "Yok"
 
-        # Üst Özet Kartları
         col1, col2, col3 = st.columns(3)
         col1.metric("🌍 Sınıfça Katetimiz Yol", f"{toplam_sinif_km} KM")
         col2.metric("📚 Toplam Okunan Kitap", f"{toplam_okunan_kitap} Adet")

@@ -295,7 +295,9 @@ st.markdown(
 # PAGE: DÜNYA HARİTASI
 # ----------------------------
 if page == "🌍 Dünya Haritası":
-    # Filtre alanı tekrar 3 sütuna düşürüldü (Toggle haritaya taşındı)
+    st.title("🌍 Gezgin Karavanlar Dünya Haritası")
+    
+    # Zarif 3'lü Filtreleme
     c1, c2, c3 = st.columns([1.1, 1.0, 1.2])
     with c1:
         selected_student = st.selectbox("👤 Kaşif Seçin", ["Sınıfın tamamı"] + list(students["_name"].astype(str)))
@@ -303,6 +305,15 @@ if page == "🌍 Dünya Haritası":
         selected_kind = st.selectbox("📖 Kitap Türü", ["Tüm türler"] + sorted([x for x in books["_kind"].dropna().unique() if str(x).strip()]))
     with c3:
         selected_title = st.selectbox("📍 Kitap Durağı", ["Tüm kitaplar"] + sorted(books["_title"].dropna().astype(str).tolist()))
+
+    # UX MÜDAHALESİ: Akıllı Rota Gösterimi
+    # Eğer tüm sınıf seçiliyse göz yormaması için çizgiler kapalı gelir, şık bir sürgü ile açılabilir.
+    # Tek bir çocuk seçiliyse sürgü gizlenir, sistem rotayı otomatik çizer.
+    if selected_student == "Sınıfın tamamı":
+        st.markdown("<div style='margin-top: 5px; margin-bottom: -15px;'></div>", unsafe_allow_html=True)
+        show_routes = st.toggle("🗺️ Tüm Sınıfın Rota Ağını Göster", value=False)
+    else:
+        show_routes = True # Tek çocukta sürgü yok, rota hep açık.
 
     filtered_books = books.copy()
     if selected_kind != "Tüm türler":
@@ -316,10 +327,11 @@ if page == "🌍 Dünya Haritası":
     else:
         class_student_records = records.copy()
 
-    # Map Initialization
+    # Harita Altyapısı (Aquarelle)
     tiles_url = f"https://api.maptiler.com/maps/aquarelle-v4/256/{{z}}/{{x}}/{{y}}.png?key={MAPTILER_API_KEY}"
     m = folium.Map(location=[24, 15], zoom_start=2.35, min_zoom=1.7, max_zoom=7, tiles=tiles_url, attr="MapTiler", control_scale=True)
 
+    # Kıtalar GeoJSON
     GEOJSON_URL = "https://gist.githubusercontent.com/hrbrmstr/91ea5cc9474286c72838/raw/f3fde312c9b8168af6254ce1410dd4dda4a31941/continents.json"
     def style_function(feature):
         c_name = feature['properties'].get('CONTINENT', '')
@@ -334,7 +346,7 @@ if page == "🌍 Dünya Haritası":
     except:
         pass
 
-    # Book Markers
+    # Kitap Durakları
     for _, row in filtered_books.iterrows():
         if pd.isna(row["_lat"]) or pd.isna(row["_lon"]): continue
         rgb = color_for_kind(row["_kind"])
@@ -350,10 +362,7 @@ if page == "🌍 Dünya Haritası":
             tooltip=row["_title"],
         ).add_to(m)
 
-    # Rotalar İçin Folium Yerleşik Katmanı (LayerControl ile harita içinde aç/kapat yapılacak)
-    routes_fg = folium.FeatureGroup(name="🗺️ Rotaları Çiz (Aç/Kapat)", show=True)
-
-    # Student Routes & Caravans
+    # Karavanlar ve Rotalar
     if not class_student_records.empty:
         for student_no, group in class_student_records.groupby("_no"):
             student_row = students[students["_no"] == student_no].iloc[0]
@@ -373,14 +382,14 @@ if page == "🌍 Dünya Haritası":
                         route_points.append(current)
                     previous = current
 
-                # Çizgiler FeatureGroup'a (routes_fg) ekleniyor
-                if len(route_points) > 1:
+                # Rota Çizimi (Sadece şalter açıksa veya tek çocuk seçiliyse)
+                if len(route_points) > 1 and show_routes:
                     is_all = (selected_student == "Sınıfın tamamı")
                     folium.PolyLine(
                         route_points, color=caravan_color,
-                        weight=3 if is_all else 6, opacity=0.3 if is_all else 0.8,
-                        dash_array="5 10" if is_all else None, line_cap="round"
-                    ).add_to(routes_fg)
+                        weight=2 if is_all else 6, opacity=0.4 if is_all else 0.8,
+                        dash_array="4 8" if is_all else None, line_cap="round"
+                    ).add_to(m)
 
                 last = ordered.iloc[-1]
                 km = float(student_row["_km"])
@@ -388,17 +397,12 @@ if page == "🌍 Dünya Haritası":
                 
                 popup_text = f"<div style='font-family:Nunito;min-width:180px'><b>🧭 {student_row['_name']}</b><br>🏆 {title}<br>🌍 {int(km):,} km<br>📍 Son Durak: {last['_title']}</div>"
                 
-                # Karavan ikonları da her zaman görünsün diye doğrudan haritaya ekleniyor
                 folium.Marker(
                     [float(last["_lat"]), float(last["_lon"])],
                     popup=folium.Popup(popup_text, max_width=250),
                     tooltip=f"{student_row['_name']} ({int(km):,} km)",
                     icon=folium.DivIcon(html=html_caravan_icon(km, caravan_color), icon_size=(92,60), icon_anchor=(46,30)),
                 ).add_to(m)
-
-    # Katmanı Haritaya Ekleme ve Sağ Üstte Kontrol Paneli Oluşturma
-    routes_fg.add_to(m)
-    folium.LayerControl(collapsed=False, position='topright').add_to(m)
 
     st_folium(m, width=None, height=650, returned_objects=[])
 

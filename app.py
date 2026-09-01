@@ -37,7 +37,7 @@ CSS = """
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Baloo+2:wght@400;500;600;700;800&family=Nunito:wght@400;600;700;800&display=swap');
 
-/* Force Light Theme Colors (Engelsiz Okunabilirlik) */
+/* Force Light Theme Colors */
 .stApp { background: linear-gradient(180deg, #f5eddb 0%, #fffaf0 34%, #fffaf0 100%) !important; }
 h1, h2, h3, h4, h5, h6, p, span, div, label, li { color: #2b3744 !important; font-family: 'Nunito', sans-serif; }
 
@@ -68,7 +68,7 @@ h1, h2, h3, h4, h5, h6, p, span, div, label, li { color: #2b3744 !important; fon
 .progress-shell { background:#ece2ce; height:16px; border-radius:999px; overflow:hidden; margin-top:12px; width:100%; }
 .progress-bar { height:100%; border-radius:999px; background:linear-gradient(90deg,#df9a55,#e4b45a,#7da27a); }
 
-/* Badges (Oyunlaştırma) */
+/* Badges */
 .badge { border-radius:18px; padding:15px; text-align:center; background:linear-gradient(145deg, #ffffff, #fffaf0); border:2px solid #e7dac1; height:100%; box-shadow: 0 4px 15px rgba(217, 164, 65, 0.15); transition: transform 0.2s; }
 .badge:hover { transform: translateY(-5px); }
 .badge .emoji { font-size:36px; margin-bottom:5px; }
@@ -81,9 +81,10 @@ h1, h2, h3, h4, h5, h6, p, span, div, label, li { color: #2b3744 !important; fon
 .book-card h4 { margin:0; font-size:17px; font-weight:700; }
 .book-card p { margin:2px 0; color:#7a7f86 !important; font-size:13px; }
 
-/* Map Markers */
+/* Map Markers & Control Styling */
 .emoji-marker { display:flex; align-items:center; justify-content:center; width:32px; height:32px; background:rgba(255,255,255,0.95); border:2px solid #e88942; border-radius:50%; box-shadow:0 3px 8px rgba(0,0,0,0.2); font-size:18px; }
 .caravan-marker svg { display:block; filter: drop-shadow(0px 4px 6px rgba(0,0,0,0.3)); }
+.leaflet-control-layers { border: 2px solid #e5d7bc !important; border-radius: 12px !important; background: rgba(255,250,240,.95) !important; box-shadow: 0 4px 12px rgba(82,60,30,.15) !important; font-family: 'Nunito', sans-serif !important; font-weight: 700 !important; color: #2b3744 !important; padding: 5px !important;}
 
 .footer-note { color:#8b806c !important; font-size:13px; text-align:center; padding:22px 0 10px; font-weight:600;}
 [data-testid="stSidebar"] { background:#f4ebd8 !important; border-right:1px solid #e2d0ae; }
@@ -294,6 +295,7 @@ st.markdown(
 # PAGE: DÜNYA HARİTASI
 # ----------------------------
 if page == "🌍 Dünya Haritası":
+    # Filtre alanı tekrar 3 sütuna düşürüldü (Toggle haritaya taşındı)
     c1, c2, c3 = st.columns([1.1, 1.0, 1.2])
     with c1:
         selected_student = st.selectbox("👤 Kaşif Seçin", ["Sınıfın tamamı"] + list(students["_name"].astype(str)))
@@ -314,15 +316,13 @@ if page == "🌍 Dünya Haritası":
     else:
         class_student_records = records.copy()
 
-    # Map Initialization (Aquarelle without labels)
+    # Map Initialization
     tiles_url = f"https://api.maptiler.com/maps/aquarelle-v4/256/{{z}}/{{x}}/{{y}}.png?key={MAPTILER_API_KEY}"
     m = folium.Map(location=[24, 15], zoom_start=2.35, min_zoom=1.7, max_zoom=7, tiles=tiles_url, attr="MapTiler", control_scale=True)
 
-    # GeoJSON Kıtalar (Güvenilir Kaynaktan, Sınır Çizgisiz Boyama)
     GEOJSON_URL = "https://gist.githubusercontent.com/hrbrmstr/91ea5cc9474286c72838/raw/f3fde312c9b8168af6254ce1410dd4dda4a31941/continents.json"
     def style_function(feature):
         c_name = feature['properties'].get('CONTINENT', '')
-        # Mapping English GeoJSON names to our Turkish dictionary colors
         name_map = {"Europe": "Avrupa", "Asia": "Asya", "Africa": "Afrika", "North America": "Kuzey Amerika", "South America": "Güney Amerika", "Oceania": "Okyanusya"}
         tr_name = name_map.get(c_name, "")
         fill_color = CONTINENT_STYLE.get(tr_name, {}).get("fill", "#e0e0e0")
@@ -332,9 +332,9 @@ if page == "🌍 Dünya Haritası":
         geo_data = requests.get(GEOJSON_URL, verify=False, timeout=5).json()
         folium.GeoJson(geo_data, name="Kıtalar", style_function=style_function).add_to(m)
     except:
-        pass # Ağ kısıtlaması varsa hata vermeden haritayı yüklemeye devam et.
+        pass
 
-    # Book Markers (Temiz, Yazısız Emoji Pinleri)
+    # Book Markers
     for _, row in filtered_books.iterrows():
         if pd.isna(row["_lat"]) or pd.isna(row["_lon"]): continue
         rgb = color_for_kind(row["_kind"])
@@ -349,6 +349,9 @@ if page == "🌍 Dünya Haritası":
             popup=folium.Popup(popup_html, max_width=250),
             tooltip=row["_title"],
         ).add_to(m)
+
+    # Rotalar İçin Folium Yerleşik Katmanı (LayerControl ile harita içinde aç/kapat yapılacak)
+    routes_fg = folium.FeatureGroup(name="🗺️ Rotaları Çiz (Aç/Kapat)", show=True)
 
     # Student Routes & Caravans
     if not class_student_records.empty:
@@ -370,21 +373,22 @@ if page == "🌍 Dünya Haritası":
                         route_points.append(current)
                     previous = current
 
-                # Rota Kalınlık ve Şeffaflık Ayarı (UX İyileştirmesi)
+                # Çizgiler FeatureGroup'a (routes_fg) ekleniyor
                 if len(route_points) > 1:
                     is_all = (selected_student == "Sınıfın tamamı")
                     folium.PolyLine(
                         route_points, color=caravan_color,
                         weight=3 if is_all else 6, opacity=0.3 if is_all else 0.8,
                         dash_array="5 10" if is_all else None, line_cap="round"
-                    ).add_to(m)
+                    ).add_to(routes_fg)
 
-                # Son Konuma Karavan İkonu
                 last = ordered.iloc[-1]
                 km = float(student_row["_km"])
                 title, _, role, remain, _ = caravan_stage(km)
                 
                 popup_text = f"<div style='font-family:Nunito;min-width:180px'><b>🧭 {student_row['_name']}</b><br>🏆 {title}<br>🌍 {int(km):,} km<br>📍 Son Durak: {last['_title']}</div>"
+                
+                # Karavan ikonları da her zaman görünsün diye doğrudan haritaya ekleniyor
                 folium.Marker(
                     [float(last["_lat"]), float(last["_lon"])],
                     popup=folium.Popup(popup_text, max_width=250),
@@ -392,10 +396,14 @@ if page == "🌍 Dünya Haritası":
                     icon=folium.DivIcon(html=html_caravan_icon(km, caravan_color), icon_size=(92,60), icon_anchor=(46,30)),
                 ).add_to(m)
 
+    # Katmanı Haritaya Ekleme ve Sağ Üstte Kontrol Paneli Oluşturma
+    routes_fg.add_to(m)
+    folium.LayerControl(collapsed=False, position='topright').add_to(m)
+
     st_folium(m, width=None, height=650, returned_objects=[])
 
 # ----------------------------
-# PAGE: KAŞİFLERİM (Esnek Yapı)
+# PAGE: KAŞİFLERİM
 # ----------------------------
 elif page == "🎒 Kaşiflerim":
     st.markdown('<div class="section-title">🎒 Kaşiflerim</div>', unsafe_allow_html=True)
@@ -413,7 +421,6 @@ elif page == "🎒 Kaşiflerim":
             pct = 100 if remain == 0 else min(100, max(0, (km-threshold) / max(1, (km-remain)-threshold) * 100))
             svg_color = {"Mavi":"#4f88bd","Turuncu":"#df8b43","Mor":"#8c72a8","Kırmızı":"#c85d63","Yeşil":"#6d9b69"}.get(str(row["_color"]).title(), "#df8b43")
             
-            # Yükseklik kısıtlaması kaldırılmış esnek kutular
             st.markdown(
                 f'''<div class="card" style="margin-bottom:20px;">
                 <div style="display:flex;justify-content:space-between">
@@ -430,7 +437,7 @@ elif page == "🎒 Kaşiflerim":
             )
 
 # ----------------------------
-# PAGE: KİTAPLIK (Gelişmiş Filtre)
+# PAGE: KİTAPLIK
 # ----------------------------
 elif page == "📚 Kitaplık":
     st.markdown('<div class="section-title">📚 Dünya Okur Kütüphanesi</div>', unsafe_allow_html=True)
@@ -443,7 +450,6 @@ elif page == "📚 Kitaplık":
         cont = st.selectbox("Kıta Filtresi", ["Tümü"] + sorted(books["_continent"].dropna().astype(str).unique().tolist()))
     
     lib = books.copy()
-    # "İçerir" (Contains) mantığıyla filtreleme düzeltildi
     if kind != "Tümü":
         lib = lib[lib["_kind"].str.contains(kind, case=False, na=False)]
     if cont != "Tümü":
@@ -475,7 +481,6 @@ elif page == "📊 Sınıf Günlüğü":
     popular_book = records["_book"].value_counts().index[0] if not records.empty else "—"
     top_student = students.sort_values("_km", ascending=False).iloc[0]
 
-    # Sadeleştirilmiş, okunabilir Metrik Kartları
     c1,c2,c3,c4 = st.columns(4)
     metrics = [(f"{class_km:,}", "Dünya Etrafında KM"), (f"{class_books}", "Okunan Kitap"), (popular_book, "Popüler Durak"), (f"{top_student['_name']}", "Lider Kaşif")]
     for col, (n,l) in zip([c1,c2,c3,c4], metrics):

@@ -122,6 +122,7 @@ if sayfa == "🗺️ Dünya Haritası ve Keşifler":
             folium.Marker(
                 location=[row['Enlem'], row['Boylam']],
                 icon=folium.DivIcon(
+                    class_name="empty",  # Bu satır varsayılan beyaz kutucuğu tamamen yok eder
                     html=f"""<div style="
                         font-family: 'Comic Sans MS', cursive, sans-serif; 
                         font-size: 13px; 

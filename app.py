@@ -23,19 +23,15 @@ st.set_page_config(
 )
 
 # ----------------------------
-# CONFIG
+# CONFIG & API
 # ----------------------------
+MAPTILER_API_KEY = "EpjYdmP1Sas39ynJVbrR"
+
 DEFAULT_URLS = {
     "students": "https://docs.google.com/spreadsheets/d/e/2PACX-1vTjaErnK01S9u8xTncNbrOBKdqbvFdp90XlL8zTZddMjDWdFVbj130XnhmBuIbGSpX-jBXkpZ9FZ2tk/pub?gid=0&single=true&output=csv",
     "books": "https://docs.google.com/spreadsheets/d/e/2PACX-1vTjaErnK01S9u8xTncNbrOBKdqbvFdp90XlL8zTZddMjDWdFVbj130XnhmBuIbGSpX-jBXkpZ9FZ2tk/pub?gid=1390307822&single=true&output=csv",
     "records": "https://docs.google.com/spreadsheets/d/e/2PACX-1vTjaErnK01S9u8xTncNbrOBKdqbvFdp90XlL8zTZddMjDWdFVbj130XnhmBuIbGSpX-jBXkpZ9FZ2tk/pub?gid=509265349&single=true&output=csv",
 }
-
-# If you prefer Streamlit secrets, create .streamlit/secrets.toml:
-# [data]
-# students = "..."
-# books = "..."
-# records = "..."
 
 def get_url(name: str) -> str:
     try:
@@ -239,7 +235,6 @@ CONTINENT_STYLE = {
     "Antarktika": {"color": "#8ea7b4", "fill": "#d9e4e8", "emoji": "❄️", "label": "Buzlar Kıtası"},
 }
 
-# Broad decorative “reading realms” – deliberately translucent so the real basemap remains visible.
 CONTINENT_POLYGONS = {
     "Kuzey Amerika": [[72,-168],[73,-65],[55,-52],[25,-55],[7,-80],[13,-120],[25,-132],[50,-168]],
     "Güney Amerika": [[13,-82],[12,-35],[-55,-58],[-54,-78],[-5,-80]],
@@ -249,7 +244,6 @@ CONTINENT_POLYGONS = {
     "Okyanusya": [[-10,112],[-11,155],[-45,160],[-47,113],[-24,105]],
     "Antarktika": [[-63,-180],[-63,180],[-90,180],[-90,-180]],
 }
-
 
 def color_for_kind(kind):
     k = str(kind).lower()
@@ -262,11 +256,9 @@ def color_for_kind(kind):
 def rgba_hex(rgb, alpha=0.24):
     return '#%02x%02x%02x' % rgb
 
-
 # ----------------------------
 # CARAVAN ENGINE
 # ----------------------------
-
 def caravan_stage(km: float):
     stages = [
         (0, "Minik Kaşif", "🚶", "İlk Adım"),
@@ -324,7 +316,6 @@ def html_caravan_icon(km, color):
 # ----------------------------
 # ROUTES
 # ----------------------------
-
 def parse_route_override(raw):
     if not raw or str(raw).lower() == "nan":
         return []
@@ -338,7 +329,6 @@ def parse_route_override(raw):
 
 
 def smooth_curve(a, b, bends=18):
-    """Soft curved discovery trail between two coordinates."""
     lat1, lon1 = a
     lat2, lon2 = b
     points = []
@@ -349,7 +339,6 @@ def smooth_curve(a, b, bends=18):
     bend = min(9.0, max(1.3, length * 0.08))
     c1 = ((lat1 + lat2) / 2 + ny * bend, (lon1 + lon2) / 2 + nx * bend)
     for t in np.linspace(0, 1, bends):
-        # quadratic Bezier
         lat = (1-t)**2 * lat1 + 2*(1-t)*t*c1[0] + t**2 * lat2
         lon = (1-t)**2 * lon1 + 2*(1-t)*t*c1[1] + t**2 * lon2
         points.append([lat, lon])
@@ -357,7 +346,6 @@ def smooth_curve(a, b, bends=18):
 
 
 def path_between(a, b):
-    # Within the same broad landmass: smooth trail. Between landmasses: curved “air/sea” leg.
     ca = continent_guess(*a)
     cb = continent_guess(*b)
     pts = smooth_curve(a, b, bends=24)
@@ -365,41 +353,39 @@ def path_between(a, b):
 
 
 def continent_guess(lat, lon):
-    # Approximate only for styling; actual map geography comes from basemap.
-    if lat < -10 and -85 < lon < -30:
-        return "Güney Amerika"
-    if lat < -10 and 110 < lon < 180:
-        return "Okyanusya"
-    if lat < -10 and -25 < lon < 55:
-        return "Afrika"
-    if lat > 35 and -15 < lon < 50:
-        return "Avrupa"
-    if lon < -35 and lat > 5:
-        return "Kuzey Amerika"
-    if lon < -30 and lat <= 5:
-        return "Güney Amerika"
-    if lon >= 50 or (lon >= 35 and lat > 0):
-        return "Asya"
+    if lat < -10 and -85 < lon < -30: return "Güney Amerika"
+    if lat < -10 and 110 < lon < 180: return "Okyanusya"
+    if lat < -10 and -25 < lon < 55: return "Afrika"
+    if lat > 35 and -15 < lon < 50: return "Avrupa"
+    if lon < -35 and lat > 5: return "Kuzey Amerika"
+    if lon < -30 and lat <= 5: return "Güney Amerika"
+    if lon >= 50 or (lon >= 35 and lat > 0): return "Asya"
     return "Avrupa"
 
 
 # ----------------------------
 # MAP JS/CSS
 # ----------------------------
-
 def install_map_behaviour(m):
     map_name = m.get_name()
     css = f"""
     <style>
-      #{map_name} .leaflet-tile-pane {{ filter: saturate(.72) sepia(.10) contrast(.98) brightness(1.04); }}
-      #{map_name} .book-label {{
-        transition: opacity .18s ease, transform .18s ease, font-size .18s ease;
-        transform-origin: center center;
-        pointer-events:auto;
+      #{map_name} .leaflet-tile-pane {{ filter: saturate(.85) contrast(.98) brightness(1.02); }}
+      .book-marker {{
+        background: none !important;
+        border: none !important;
+        transition: opacity 0.3s ease !important;
       }}
-      #{map_name}.zoom-calm .book-label {{ font-size: 9px !important; opacity:.62; padding:1px 3px !important; border-width:1px !important; box-shadow:none !important; }}
-      #{map_name}.zoom-medium .book-label {{ font-size: 11px !important; opacity:.84; }}
-      #{map_name}.zoom-close .book-label {{ font-size: 14px !important; opacity:1; }}
+      /* Hide labels when zoomed out */
+      #{map_name}.zoom-hide .book-marker {{
+        opacity: 0 !important;
+        pointer-events: none !important;
+      }}
+      /* Show labels when zoomed in */
+      #{map_name}.zoom-show .book-marker {{
+        opacity: 1 !important;
+        pointer-events: auto !important;
+      }}
       #{map_name} .leaflet-control-zoom a {{ border-color:#d5c39c; color:#5c513f; background:#fffaf0; }}
       #{map_name} .leaflet-control-layers {{ border:1px solid #dac79e; background:#fffaf0; color:#443d33; }}
       .caravan-marker svg {{ display:block; }}
@@ -409,10 +395,12 @@ def install_map_behaviour(m):
       const map = {map_name};
       function updateBookLabels() {{
         const z = map.getZoom();
-        map.getContainer().classList.remove('zoom-calm','zoom-medium','zoom-close');
-        if (z < 3) map.getContainer().classList.add('zoom-calm');
-        else if (z < 4.5) map.getContainer().classList.add('zoom-medium');
-        else map.getContainer().classList.add('zoom-close');
+        map.getContainer().classList.remove('zoom-hide', 'zoom-show');
+        if (z < 4) {{
+            map.getContainer().classList.add('zoom-hide');
+        }} else {{
+            map.getContainer().classList.add('zoom-show');
+        }}
       }}
       map.on('zoomend', updateBookLabels);
       setTimeout(updateBookLabels, 250);
@@ -531,9 +519,11 @@ if page == "🌍 Dünya Haritası":
             st.markdown(f'<div class="card metric-card"><div class="metric-number">{number}</div><div class="metric-label">{label}</div></div>', unsafe_allow_html=True)
 
     st.markdown('<div class="section-title">🗺️ Masal Haritamız</div>', unsafe_allow_html=True)
-    st.caption("Yakınlaşınca kitap isimleri büyür; uzaklaşınca sadeleşir. Karavanlar kilometre arttıkça aşama değiştirir.")
+    st.caption("Yakınlaşınca kitap isimleri belirir. Karavanlar kilometre arttıkça aşama değiştirir.")
 
-    m = folium.Map(location=[24, 15], zoom_start=2.35, min_zoom=1.7, max_zoom=7, tiles="CartoDB Voyager", control_scale=True)
+    # MapTiler API Integration
+    tiles_url = f"https://api.maptiler.com/maps/aquarelle-v4/256/{{z}}/{{x}}/{{y}}.png?key={MAPTILER_API_KEY}"
+    m = folium.Map(location=[24, 15], zoom_start=2.35, min_zoom=1.7, max_zoom=7, tiles=tiles_url, attr="&copy; MapTiler &copy; OSM", control_scale=True)
     install_map_behaviour(m)
 
     # Continental reading realms
@@ -561,10 +551,13 @@ if page == "🌍 Dünya Haritası":
         rgb = color_for_kind(kind)
         label_color = rgba_hex(rgb)
         short_title = str(row["_title"])
+        
+        # Reduced font size and removed the default Leaflet white box via class_name="book-marker"
         label_html = f'''
-          <div class="book-label" data-book-label="true" style="font-family:Nunito,sans-serif;font-weight:800;color:#31404b;background:rgba(255,250,240,.92);padding:3px 6px;border-radius:9px;border:2px solid {label_color};white-space:nowrap;text-align:center;box-shadow:0 3px 10px rgba(40,30,15,.15);">
+          <div class="book-label" data-book-label="true" style="font-family:Nunito,sans-serif;font-weight:800;color:#31404b;background:rgba(255,250,240,.92);padding:2px 5px;border-radius:6px;border:1.5px solid {label_color};white-space:nowrap;text-align:center;font-size:10.5px;box-shadow:0 2px 6px rgba(40,30,15,.15);">
              {str(row["_emoji"])} {short_title}
           </div>'''
+        
         popup = folium.Popup(
             f"<div style='font-family:Nunito'><b>{short_title}</b><br>🌈 Tür: {kind}<br>🗺️ Kıta: {cont}<br>📄 Yolculuk: {int(row['_km'])} km</div>",
             max_width=280,
@@ -746,6 +739,14 @@ elif page == "📊 Sınıf Günlüğü":
         fig2 = px.bar(rank, x="_km", y="_name", orientation="h")
         fig2.update_layout(margin=dict(l=10,r=10,t=5,b=5), paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", xaxis_title="KM", yaxis_title=None)
         st.plotly_chart(fig2, use_container_width=True)
+
+    # Yeni eklenen İstatistik Kartı: Top 5 Kitap
+    st.markdown("#### 🏆 En Çok Ziyaret Edilen Duraklar (Kitaplar)")
+    top_books = records["_book"].value_counts().head(5).reset_index()
+    top_books.columns = ["Kitap", "Ziyaret"]
+    fig3 = px.bar(top_books, x="Kitap", y="Ziyaret", color="Ziyaret", color_continuous_scale="Oryel")
+    fig3.update_layout(margin=dict(l=10,r=10,t=5,b=5), paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)")
+    st.plotly_chart(fig3, use_container_width=True)
 
     st.markdown("#### 🏅 Kaşif rozetleri")
     badges = [

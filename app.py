@@ -4,6 +4,10 @@ import folium
 from streamlit_folium import st_folium
 import plotly.express as px
 import requests
+import urllib3
+
+# Güvenlik duvarı ve sertifika uyarılarını gizle (Özellikle kısıtlı ağlar için)
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 # --- SAYFA YAPILANDIRMASI ---
 st.set_page_config(
@@ -99,10 +103,15 @@ if sayfa == "🗺️ Dünya Haritası ve Keşifler":
         kitap_listesi = ["Tüm Kitaplar / Şehirler"] + sorted(list(df_kitap['Kitap_Adi_Sehir'].dropna().unique()))
         secilen_kitap = st.selectbox("📚 Kitap / Şehir Seçin:", kitap_listesi)
 
-    # API İstemeyen ve Ülke/Şehir İsimleri Olmayan Temiz Harita: 'cartodbpositronnolabels'
-    m = folium.Map(location=[25, 10], zoom_start=2, tiles="cartodbpositronnolabels")
+    # API İstemeyen ve Üzerinde Hiçbir Yazı Olmayan Özel Harita Bağlantısı
+    m = folium.Map(
+        location=[25, 10], 
+        zoom_start=2, 
+        tiles="https://{s}.basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}{r}.png",
+        attr="&copy; OpenStreetMap contributors &copy; CARTO"
+    )
 
-    # Kıtaları Renklendirme (API bağlantısı güçlendirildi)
+    # Kıtaları Renklendirme (Ağ engellerini aşmak için verify=False eklendi)
     KITALAR_GEOJSON_URL = "https://gist.githubusercontent.com/hrbrmstr/91ea5cc9474286c72838/raw/f3fde312c9b8168af6254ce1410dd4dda4a31941/continents.json"
     
     def kita_stili(feature):
@@ -115,15 +124,15 @@ if sayfa == "🗺️ Dünya Haritası ve Keşifler":
             'fillColor': kita_renkleri.get(kita_adi, '#e0e0e0'),
             'color': '#ffffff',
             'weight': 1,
-            'fillOpacity': 0.6
+            'fillOpacity': 0.7
         }
 
     try:
-        # GeoJSON verisini zorla indiriyoruz ki hata vermesin
-        geo_data = requests.get(KITALAR_GEOJSON_URL).json()
+        response = requests.get(KITALAR_GEOJSON_URL, verify=False, timeout=10)
+        geo_data = response.json()
         folium.GeoJson(geo_data, name="Kıtalar", style_function=kita_stili).add_to(m)
     except Exception as e:
-        st.warning("Kıta renkleri geçici olarak yüklenemedi, ancak harita çalışmaya devam ediyor.")
+        st.warning("Ağ kısıtlaması nedeniyle kıta renkleri indirilemedi, harita renksiz olarak devam ediyor.")
 
     # Kitapları (Şehirleri) Metin Olarak Ekleme
     filtreli_kitaplar = df_kitap.copy()

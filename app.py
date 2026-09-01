@@ -495,15 +495,31 @@ elif page == "📊 Sınıf Günlüğü":
         top_books = records["_book"].value_counts().head(5).reset_index()
         top_books.columns = ["Kitap", "Ziyaret"]
         fig3 = px.bar(top_books, x="Ziyaret", y="Kitap", orientation="h", color="Ziyaret", color_continuous_scale="Oryel")
-        fig3.update_layout(margin=dict(l=5,r=5,t=5,b=5), paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", yaxis={'categoryorder':'total ascending'})
-        st.plotly_chart(fig3, use_container_width=True)
+        fig3.update_layout(
+            margin=dict(l=5,r=5,t=5,b=5), 
+            paper_bgcolor="rgba(0,0,0,0)", 
+            plot_bgcolor="rgba(0,0,0,0)", 
+            yaxis={'categoryorder':'total ascending'},
+            font=dict(color="#2b3744", family="Nunito")
+        )
+        st.plotly_chart(fig3, use_container_width=True, theme=None)
 
     with right:
         st.markdown("#### 🧭 En Çok KM Yapan Kaşifler")
         rank = students[["_name","_km"]].sort_values("_km", ascending=False).head(5)
-        fig2 = px.bar(rank, x="_km", y="_name", orientation="h", color="_km", color_continuous_scale="Teal")
-        fig2.update_layout(margin=dict(l=5,r=5,t=5,b=5), paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", yaxis={'categoryorder':'total ascending'})
-        st.plotly_chart(fig2, use_container_width=True)
+        fig2 = px.bar(
+            rank, x="_km", y="_name", orientation="h", color="_km", 
+            color_continuous_scale="Teal", 
+            labels={"_km": "Kilometre", "_name": "Kaşif"}
+        )
+        fig2.update_layout(
+            margin=dict(l=5,r=5,t=5,b=5), 
+            paper_bgcolor="rgba(0,0,0,0)", 
+            plot_bgcolor="rgba(0,0,0,0)", 
+            yaxis={'categoryorder':'total ascending'},
+            font=dict(color="#2b3744", family="Nunito")
+        )
+        st.plotly_chart(fig2, use_container_width=True, theme=None)
 
     st.markdown("#### 🏅 Kazanılan Sınıf Rozetleri")
     badges = [

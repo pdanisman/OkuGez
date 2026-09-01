@@ -3,7 +3,6 @@ import pandas as pd
 import folium
 from streamlit_folium import st_folium
 import plotly.express as px
-import requests
 
 # --- SAYFA YAPILANDIRMASI ---
 st.set_page_config(
@@ -18,7 +17,7 @@ OGRENCILER_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vTjaErnK01S9u8
 KITAPLAR_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vTjaErnK01S9u8xTncNbrOBKdqbvFdp90XlL8zTZddMjDWdFVbj130XnhmBuIbGSpX-jBXkpZ9FZ2tk/pub?gid=1390307822&single=true&output=csv"
 KAYITLAR_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vTjaErnK01S9u8xTncNbrOBKdqbvFdp90XlL8zTZddMjDWdFVbj130XnhmBuIbGSpX-jBXkpZ9FZ2tk/pub?gid=509265349&single=true&output=csv"
 
-# --- HARİTA API AYARI ---
+# --- HARİTA API AYARI (Kendi Anahtarın) ---
 MAPTILER_API_KEY = "EpjYdmP1Sas39ynJVbrR"
 
 # --- RENK ÇEVİRİ SÖZLÜĞÜ ---
@@ -80,7 +79,7 @@ else:
 st.sidebar.title("📌 Gezgin Menüsü")
 sayfa = st.sidebar.radio("Gitmek İstediğiniz Sayfa:", ["🗺️ Dünya Haritası ve Keşifler", "🏆 Gezginler Kulübü", "📊 Seyahat İstatistikleri"])
 st.sidebar.markdown("---")
-st.sidebar.info("💡 **Bilgi:** Her cuma yeni kitap okundukça haritanız güncellenir.")
+st.sidebar.info("💡 **Bilgi:** Her cuma yeni kitap okundukça haritanız otomatik güncellenir.")
 
 # ==========================================
 # 1. SAYFA: DÜNYA HARİTASI VE KEŞİFLER
@@ -102,7 +101,7 @@ if sayfa == "🗺️ Dünya Haritası ve Keşifler":
         kitap_listesi = ["Tüm Kitaplar / Şehirler"] + sorted(list(df_kitap['Kitap_Adi_Sehir'].dropna().unique()))
         secilen_kitap = st.selectbox("📚 Kitap / Şehir Seçin:", kitap_listesi)
 
-    # API Kontrollü Özel Harita (Ülke/Şehir isimleri olmayan temiz altlık)
+    # API Kontrollü Özel Harita (Üzerinde yazı olmayan, hızlı yüklenen temiz altlık)
     tiles_url = f"https://api.maptiler.com/maps/dataviz-light/{{z}}/{{x}}/{{y}}.png?key={MAPTILER_API_KEY}"
     m = folium.Map(
         location=[25, 10], 
@@ -110,28 +109,6 @@ if sayfa == "🗺️ Dünya Haritası ve Keşifler":
         tiles=tiles_url,
         attr="&copy; MapTiler &copy; OpenStreetMap contributors"
     )
-
-    # Kıtaları Renklendirme (Doğrudan URL üzerinden çekim)
-    KITALAR_GEOJSON_URL = "https://gist.githubusercontent.com/hrbrmstr/91ea5cc9474286c72838/raw/f3fde312c9b8168af6254ce1410dd4dda4a31941/continents.json"
-    
-    def kita_stili(feature):
-        kita_renkleri = {
-            "Asia": "#ffb3ba", "Europe": "#baffc9", "Africa": "#ffdfba",
-            "North America": "#bae1ff", "South America": "#ffffba", "Oceania": "#e8baff"
-        }
-        kita_adi = feature['properties'].get('CONTINENT', 'Unknown')
-        return {
-            'fillColor': kita_renkleri.get(kita_adi, '#e0e0e0'),
-            'color': '#ffffff',
-            'weight': 1,
-            'fillOpacity': 0.7
-        }
-
-    try:
-        geo_data = requests.get(KITALAR_GEOJSON_URL).json()
-        folium.GeoJson(geo_data, name="Kıtalar", style_function=kita_stili).add_to(m)
-    except Exception as e:
-        st.warning(f"Kıtalar yüklenirken bir sorun oluştu: {e}")
 
     # Kitapları (Şehirleri) Metin Olarak Ekleme
     filtreli_kitaplar = df_kitap.copy()
@@ -183,7 +160,7 @@ if sayfa == "🗺️ Dünya Haritası ve Keşifler":
                         rota_koordinatlari,
                         color=karavan_rengi,
                         weight=3 if secilen_ogrenci != "Tüm Öğrenciler" else 2,
-                        opacity=0.9 if secilen_ogrenci != "Tüm Öğrenciler" else 0.6,
+                        opacity=0.9 if secilen_ogrenci != "Tüm Öğrenciler" else 0.5,
                         dash_array='5, 5',
                         tooltip=f"Öğrenci {ogrenci_no} Rotası"
                     ).add_to(m)

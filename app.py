@@ -1,18 +1,17 @@
 import math
 import re
-from pathlib import Path
+import json
+import requests
 
 import folium
 import numpy as np
 import pandas as pd
 import plotly.express as px
 import streamlit as st
-from branca.element import Element
 from streamlit_folium import st_folium
 
 # ============================================================
 # GEZGİN KARAVANLAR — 4. SINIF OKUMA MACERASI
-# Streamlit + Google Sheets CSV + Folium
 # ============================================================
 
 st.set_page_config(
@@ -27,74 +26,67 @@ st.set_page_config(
 # ----------------------------
 MAPTILER_API_KEY = "EpjYdmP1Sas39ynJVbrR"
 
-DEFAULT_URLS = {
-    "students": "https://docs.google.com/spreadsheets/d/e/2PACX-1vTjaErnK01S9u8xTncNbrOBKdqbvFdp90XlL8zTZddMjDWdFVbj130XnhmBuIbGSpX-jBXkpZ9FZ2tk/pub?gid=0&single=true&output=csv",
-    "books": "https://docs.google.com/spreadsheets/d/e/2PACX-1vTjaErnK01S9u8xTncNbrOBKdqbvFdp90XlL8zTZddMjDWdFVbj130XnhmBuIbGSpX-jBXkpZ9FZ2tk/pub?gid=1390307822&single=true&output=csv",
-    "records": "https://docs.google.com/spreadsheets/d/e/2PACX-1vTjaErnK01S9u8xTncNbrOBKdqbvFdp90XlL8zTZddMjDWdFVbj130XnhmBuIbGSpX-jBXkpZ9FZ2tk/pub?gid=509265349&single=true&output=csv",
-}
-
-def get_url(name: str) -> str:
-    try:
-        return str(st.secrets["data"][name])
-    except Exception:
-        return DEFAULT_URLS[name]
-
-STUDENT_URL = get_url("students")
-BOOK_URL = get_url("books")
-RECORD_URL = get_url("records")
+STUDENT_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vTjaErnK01S9u8xTncNbrOBKdqbvFdp90XlL8zTZddMjDWdFVbj130XnhmBuIbGSpX-jBXkpZ9FZ2tk/pub?gid=0&single=true&output=csv"
+BOOK_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vTjaErnK01S9u8xTncNbrOBKdqbvFdp90XlL8zTZddMjDWdFVbj130XnhmBuIbGSpX-jBXkpZ9FZ2tk/pub?gid=1390307822&single=true&output=csv"
+RECORD_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vTjaErnK01S9u8xTncNbrOBKdqbvFdp90XlL8zTZddMjDWdFVbj130XnhmBuIbGSpX-jBXkpZ9FZ2tk/pub?gid=509265349&single=true&output=csv"
 
 # ----------------------------
-# THEME
+# THEME (FORCE LIGHT MODE & UX)
 # ----------------------------
 CSS = """
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Baloo+2:wght@400;500;600;700;800&family=Nunito:wght@400;600;700;800&display=swap');
-:root {
-  --ink: #243447;
-  --muted: #6c7480;
-  --paper: #fffaf0;
-  --cream: #f7efd9;
-  --sand: #e9d8b5;
-  --orange: #e88942;
-  --teal: #4b9a96;
-  --green: #6d9b69;
-  --purple: #8c72a8;
-  --pink: #d67d97;
-  --blue: #5d8db8;
-  --gold: #d9a441;
-}
-html, body, [class*="css"] { font-family: 'Nunito', sans-serif; }
-.stApp { background: linear-gradient(180deg, #f5eddb 0%, #fffaf0 34%, #fffaf0 100%); }
+
+/* Force Light Theme Colors (Engelsiz Okunabilirlik) */
+.stApp { background: linear-gradient(180deg, #f5eddb 0%, #fffaf0 34%, #fffaf0 100%) !important; }
+h1, h2, h3, h4, h5, h6, p, span, div, label, li { color: #2b3744 !important; font-family: 'Nunito', sans-serif; }
+
 .block-container { max-width: 1450px; padding-top: 1.0rem; padding-bottom: 2.5rem; }
+
+/* Hero Section */
 .hero {
   position: relative; overflow:hidden; border-radius: 30px; padding: 26px 34px 28px;
   background: radial-gradient(circle at 86% 20%, rgba(255,255,255,.55) 0 7%, transparent 7.3%),
               linear-gradient(135deg, #f8dcae 0%, #f4c989 42%, #eed79d 100%);
   border: 2px solid #dfbd80; box-shadow: 0 12px 35px rgba(81,57,28,.12); margin-bottom: 18px;
 }
-.hero:after { content:'✦   ✧   ✦   ✧'; position:absolute; right:28px; bottom:12px; color:rgba(96,75,43,.23); font-size:32px; letter-spacing:10px; }
-.hero h1 { font-family:'Baloo 2', sans-serif; color:#243447; font-size:44px; line-height:1; margin:0; font-weight:800; }
-.hero p { color:#6b5739; font-size:17px; font-weight:700; margin:8px 0 0; }
-.eyebrow { color:#8d6a38; font-weight:800; letter-spacing:2px; text-transform:uppercase; font-size:13px; }
-.card { background:rgba(255,250,240,.92); border:1.5px solid #e5d7bc; border-radius:22px; padding:18px; box-shadow:0 8px 24px rgba(82,60,30,.08); }
-.metric-card { min-height:132px; }
-.metric-number { font-family:'Baloo 2', sans-serif; font-size:34px; font-weight:800; color:#243447; line-height:1.0; }
-.metric-label { color:#717782; font-size:13px; font-weight:800; margin-top:5px; }
-.chip { display:inline-block; padding:6px 10px; border-radius:999px; margin:3px 5px 3px 0; font-size:12px; font-weight:800; background:#f0e5cf; color:#6a5538; }
-.section-title { font-family:'Baloo 2'; font-size:28px; font-weight:800; color:#243447; margin: 8px 0 8px; }
-.small-muted { color:#7c8088; font-size:13px; }
-.progress-shell { background:#ece2ce; height:16px; border-radius:999px; overflow:hidden; margin-top:8px; }
+.hero h1 { font-family:'Baloo 2', sans-serif !important; font-size:44px; line-height:1; margin:0; font-weight:800; }
+.hero p { color:#6b5739 !important; font-size:17px; font-weight:700; margin:8px 0 0; }
+.eyebrow { color:#8d6a38 !important; font-weight:800; letter-spacing:2px; text-transform:uppercase; font-size:13px; }
+
+/* Cards & Layout */
+.card { background:rgba(255,255,255,.95); border:1.5px solid #e5d7bc; border-radius:22px; padding:18px; box-shadow:0 8px 24px rgba(82,60,30,.08); height:100%; display:flex; flex-direction:column; }
+.metric-card { text-align: center; justify-content: center; align-items: center; }
+.metric-number { font-family:'Baloo 2', sans-serif !important; font-size:38px; font-weight:800; line-height:1.0; }
+.metric-label { color:#717782 !important; font-size:14px; font-weight:800; margin-top:5px; text-transform:uppercase; letter-spacing:1px; }
+
+/* Typography & Elements */
+.section-title { font-family:'Baloo 2' !important; font-size:28px; font-weight:800; margin: 8px 0 8px; }
+.small-muted { color:#7c8088 !important; font-size:13px; }
+
+/* Progress Bar */
+.progress-shell { background:#ece2ce; height:16px; border-radius:999px; overflow:hidden; margin-top:12px; width:100%; }
 .progress-bar { height:100%; border-radius:999px; background:linear-gradient(90deg,#df9a55,#e4b45a,#7da27a); }
-.badge { border-radius:18px; padding:13px 12px; text-align:center; background:#fffaf0; border:1.5px solid #e7dac1; height:100%; }
-.badge .emoji { font-size:30px; }
-.badge b { display:block; margin-top:3px; color:#31404e; }
-.book-card { display:flex; gap:14px; align-items:center; padding:12px; background:#fffdf7; border:1.5px solid #e9ddc8; border-radius:18px; margin-bottom:8px; }
-.book-cover { width:54px; height:70px; border-radius:9px; display:flex; align-items:center; justify-content:center; color:#fff; font-size:22px; font-weight:800; box-shadow:0 6px 12px rgba(50,40,20,.13); flex:0 0 auto; }
-.book-card h4 { margin:0; color:#2b3744; font-size:16px; }
-.book-card p { margin:2px 0; color:#7a7f86; font-size:12px; }
-.footer-note { color:#8b806c; font-size:12px; text-align:center; padding:22px 0 4px; }
-[data-testid="stSidebar"] { background:#f2e7ce; border-right:1px solid #e2d0ae; }
-[data-testid="stSidebar"] h1, [data-testid="stSidebar"] h2, [data-testid="stSidebar"] h3 { font-family:'Baloo 2'; color:#334150; }
+
+/* Badges (Oyunlaştırma) */
+.badge { border-radius:18px; padding:15px; text-align:center; background:linear-gradient(145deg, #ffffff, #fffaf0); border:2px solid #e7dac1; height:100%; box-shadow: 0 4px 15px rgba(217, 164, 65, 0.15); transition: transform 0.2s; }
+.badge:hover { transform: translateY(-5px); }
+.badge .emoji { font-size:36px; margin-bottom:5px; }
+.badge b { display:block; margin-top:3px; font-size:16px; }
+
+/* Book Cards */
+.book-card { display:flex; gap:14px; align-items:center; padding:15px; background:#fffdf7; border:1.5px solid #e9ddc8; border-radius:18px; margin-bottom:12px; transition: 0.2s; }
+.book-card:hover { background:#ffffff; box-shadow:0 6px 15px rgba(50,40,20,.10); border-color:#dcb97f; }
+.book-cover { width:54px; height:70px; border-radius:9px; display:flex; align-items:center; justify-content:center; color:#fff !important; font-size:22px; font-weight:800; box-shadow:0 4px 10px rgba(0,0,0,.15); flex:0 0 auto; }
+.book-card h4 { margin:0; font-size:17px; font-weight:700; }
+.book-card p { margin:2px 0; color:#7a7f86 !important; font-size:13px; }
+
+/* Map Markers */
+.emoji-marker { display:flex; align-items:center; justify-content:center; width:32px; height:32px; background:rgba(255,255,255,0.95); border:2px solid #e88942; border-radius:50%; box-shadow:0 3px 8px rgba(0,0,0,0.2); font-size:18px; }
+.caravan-marker svg { display:block; filter: drop-shadow(0px 4px 6px rgba(0,0,0,0.3)); }
+
+.footer-note { color:#8b806c !important; font-size:13px; text-align:center; padding:22px 0 10px; font-weight:600;}
+[data-testid="stSidebar"] { background:#f4ebd8 !important; border-right:1px solid #e2d0ae; }
 </style>
 """
 st.markdown(CSS, unsafe_allow_html=True)
@@ -102,19 +94,16 @@ st.markdown(CSS, unsafe_allow_html=True)
 # ----------------------------
 # DATA HELPERS
 # ----------------------------
-
 def clean_col(name: str) -> str:
     name = str(name).strip()
     name = name.replace("İ", "I").replace("ı", "i")
     name = re.sub(r"\s+", "_", name)
     return name
 
-
 def normalize_columns(df: pd.DataFrame) -> pd.DataFrame:
     df = df.copy()
     df.columns = [clean_col(c) for c in df.columns]
     return df
-
 
 def first_existing(df: pd.DataFrame, names, default=None):
     for n in names:
@@ -123,137 +112,64 @@ def first_existing(df: pd.DataFrame, names, default=None):
             return key
     return default
 
-
 @st.cache_data(ttl=60, show_spinner=False)
 def load_data():
     students = normalize_columns(pd.read_csv(STUDENT_URL))
     books = normalize_columns(pd.read_csv(BOOK_URL))
     records = normalize_columns(pd.read_csv(RECORD_URL))
 
-    # Student columns
     s_no = first_existing(students, ["Ogrenci_No", "Öğrenci_No", "No", "Öğrenci"])
     s_name = first_existing(students, ["Ad_Soyad", "Ogrenci_Adi", "Öğrenci_Adı", "Adı_Soyadı", "İsim"])
     s_color = first_existing(students, ["Karavan_Rengi", "KaravanRengi", "Renk"])
-    s_spent = first_existing(students, ["Harcanan_Mil", "HarcananMil", "Mil"], None)
-    s_img = first_existing(students, ["Karavan_Gorsel_URL", "Karavan_Görsel_URL", "Gorsel_URL", "Görsel_URL"])
-
-    if s_no is None:
-        raise ValueError("Öğrenciler tablosunda Ogrenci_No sütunu bulunamadı.")
+    
     students[s_no] = students[s_no].astype(str).str.strip()
     students["_name"] = students[s_name].astype(str).str.strip() if s_name else students[s_no]
     students["_color"] = students[s_color].astype(str).str.strip() if s_color else "Turuncu"
-    students["_spent"] = pd.to_numeric(students[s_spent], errors="coerce").fillna(0) if s_spent else 0
-    students["_img"] = students[s_img].astype(str).str.strip() if s_img else ""
     students["_no"] = students[s_no]
 
-    # Book columns
-    b_title = first_existing(books, ["Kitap_Adi_Sehir", "Kitap_Adi", "Kitap", "Başlık"])
+    b_title = first_existing(books, ["Kitap_Adi_Sehir", "Kitap_Adi", "Kitap"])
     b_lat = first_existing(books, ["Enlem", "Lat", "Latitude"])
     b_lon = first_existing(books, ["Boylam", "Lon", "Longitude"])
     b_km = first_existing(books, ["Sayfa_Sayisi_KM", "Sayfa_KM", "KM", "Sayfa"])
     b_kind = first_existing(books, ["Tur", "Tür", "Kategori"])
-    b_cont = first_existing(books, ["Kita", "Kıta", "Kita_Adi", "Kıta_Adı"])
-    b_mix = first_existing(books, ["Tur_Kita", "Tur_Kıta"])
-    b_route = first_existing(books, ["Rota_Noktalari", "Rota_Noktaları", "Rota"])
+    b_cont = first_existing(books, ["Kita", "Kıta"])
     b_emoji = first_existing(books, ["Ikon", "İkon", "Emoji"])
 
-    if b_title is None:
-        raise ValueError("Kitaplar tablosunda Kitap_Adi_Sehir sütunu bulunamadı.")
     books[b_title] = books[b_title].astype(str).str.strip()
     books["_title"] = books[b_title]
     books["_lat"] = pd.to_numeric(books[b_lat], errors="coerce") if b_lat else np.nan
     books["_lon"] = pd.to_numeric(books[b_lon], errors="coerce") if b_lon else np.nan
     books["_km"] = pd.to_numeric(books[b_km], errors="coerce").fillna(0) if b_km else 0
     books["_kind"] = books[b_kind].astype(str).str.strip() if b_kind else "Genel"
-    books["_continent"] = books[b_cont].astype(str).str.strip() if b_cont else ""
-    books["_mix"] = books[b_mix].astype(str).str.strip() if b_mix else ""
-    books["_route"] = books[b_route].astype(str).str.strip() if b_route else ""
+    books["_continent"] = books[b_cont].astype(str).str.strip() if b_cont else "Avrupa"
     books["_emoji"] = books[b_emoji].astype(str).str.strip() if b_emoji else "📚"
 
-    # Record columns
-    r_no = first_existing(records, ["Ogrenci_No", "Öğrenci_No", "No", "Öğrenci"])
+    r_no = first_existing(records, ["Ogrenci_No", "Öğrenci_No", "No"])
     r_book = first_existing(records, ["Okudugu_Kitap", "Okuduğu_Kitap", "Kitap", "Kitap_Adi"])
-    r_date = first_existing(records, ["Tarih", "Okuma_Tarihi", "Bitirme_Tarihi"])
-
-    if r_no is None or r_book is None:
-        raise ValueError("Kayıtlar tablosunda Ogrenci_No ve Okudugu_Kitap sütunları gerekli.")
+    
     records["_no"] = records[r_no].astype(str).str.strip()
     records["_book"] = records[r_book].astype(str).str.strip()
-    records["_date"] = records[r_date].astype(str).str.strip() if r_date else ""
-    if r_date:
-        records["_date_sort"] = pd.to_datetime(records[r_date], errors="coerce")
-    else:
-        records["_date_sort"] = pd.NaT
-
+    
     return students, books, records
 
-
-def title_lookup(books: pd.DataFrame):
-    return {str(x).strip(): x for x in books["_title"].dropna().tolist()}
-
-
-def parse_book_metadata(row):
-    raw = str(row.get("_mix", "")).strip()
-    kind = str(row.get("_kind", "")).strip()
-    cont = str(row.get("_continent", "")).strip()
-
-    if raw:
-        parts = re.split(r"\s*(?:/|\||—|–|-|•)\s*", raw)
-        parts = [p.strip() for p in parts if p.strip()]
-        if len(parts) >= 2:
-            known_conts = {"avrupa", "asya", "afrika", "kuzey amerika", "güney amerika", "okyanusya", "antarktika"}
-            for p in parts:
-                if p.lower() in known_conts:
-                    cont = p
-                elif not kind or kind.lower() == "genel":
-                    kind = p
-    if not kind or kind.lower() == "nan":
-        kind = "Genel"
-    if not cont or cont.lower() == "nan":
-        cont = "Avrupa"
-    return kind, cont
-
-
 COLORS = {
-    "Macera": (222, 145, 77),
-    "Gizem": (113, 122, 171),
-    "Fantastik": (140, 105, 171),
-    "Mizah": (221, 157, 78),
-    "Bilim": (76, 144, 170),
-    "Doğa": (103, 154, 105),
-    "Tarih": (170, 125, 74),
-    "Klasik": (180, 108, 120),
-    "Genel": (128, 128, 128),
-}
-CONTINENT_STYLE = {
-    "Avrupa": {"color": "#e39b60", "fill": "#efc79c", "emoji": "🧭", "label": "Macera Kıtası"},
-    "Asya": {"color": "#618db1", "fill": "#bed7e4", "emoji": "🔬", "label": "Bilim & Keşif Kıtası"},
-    "Afrika": {"color": "#6d9b69", "fill": "#bfd3a9", "emoji": "🌿", "label": "Doğa Kıtası"},
-    "Kuzey Amerika": {"color": "#c27d8f", "fill": "#e8bdc8", "emoji": "😂", "label": "Mizah Kıtası"},
-    "Güney Amerika": {"color": "#7d9d72", "fill": "#c6d6bd", "emoji": "🌎", "label": "Hikâye Kıtası"},
-    "Okyanusya": {"color": "#7d87b4", "fill": "#c8cce2", "emoji": "✨", "label": "Hayal Kıtası"},
-    "Antarktika": {"color": "#8ea7b4", "fill": "#d9e4e8", "emoji": "❄️", "label": "Buzlar Kıtası"},
+    "Macera": (222, 145, 77), "Gizem": (113, 122, 171), "Fantastik": (140, 105, 171),
+    "Mizah": (221, 157, 78), "Bilim": (76, 144, 170), "Doğa": (103, 154, 105),
+    "Tarih": (170, 125, 74), "Klasik": (180, 108, 120), "Genel": (128, 128, 128),
 }
 
-CONTINENT_POLYGONS = {
-    "Kuzey Amerika": [[72,-168],[73,-65],[55,-52],[25,-55],[7,-80],[13,-120],[25,-132],[50,-168]],
-    "Güney Amerika": [[13,-82],[12,-35],[-55,-58],[-54,-78],[-5,-80]],
-    "Avrupa": [[72,-25],[70,45],[52,42],[38,35],[35,8],[41,-10],[54,-22]],
-    "Afrika": [[37,-18],[37,51],[4,53],[-35,37],[-35,12],[5,-18]],
-    "Asya": [[77,40],[72,150],[8,150],[6,103],[19,69],[30,45],[48,40]],
-    "Okyanusya": [[-10,112],[-11,155],[-45,160],[-47,113],[-24,105]],
-    "Antarktika": [[-63,-180],[-63,180],[-90,180],[-90,-180]],
+CONTINENT_STYLE = {
+    "Avrupa": {"fill": "#efc79c"}, "Asya": {"fill": "#bed7e4"}, "Afrika": {"fill": "#bfd3a9"},
+    "Kuzey Amerika": {"fill": "#e8bdc8"}, "Güney Amerika": {"fill": "#c6d6bd"}, "Okyanusya": {"fill": "#c8cce2"},
 }
 
 def color_for_kind(kind):
     k = str(kind).lower()
     for key, rgb in COLORS.items():
-        if key.lower() in k:
-            return rgb
+        if key.lower() in k: return rgb
     return COLORS["Genel"]
 
-
-def rgba_hex(rgb, alpha=0.24):
+def rgba_hex(rgb):
     return '#%02x%02x%02x' % rgb
 
 # ----------------------------
@@ -278,13 +194,10 @@ def caravan_stage(km: float):
     remaining = max(0, next_km - km)
     return current[1], current[2], current[3], remaining, current[0]
 
-
 def caravan_svg(km, color_hex="#e88942", size=78):
     name, emoji, _, _, stage_km = caravan_stage(km)
-    stage = 0
-    for threshold in [0, 500, 1000, 2000, 5000, 10000, 20000]:
-        if km >= threshold:
-            stage += 1
+    stage = sum(1 for t in [0, 500, 1000, 2000, 5000, 10000, 20000] if km >= t)
+    
     if stage == 1:
         body = f'<circle cx="49" cy="31" r="13" fill="{color_hex}"/><circle cx="49" cy="31" r="6" fill="#fff4d4"/>'
         wheel = ''
@@ -300,40 +213,24 @@ def caravan_svg(km, color_hex="#e88942", size=78):
     else:
         body = f'<path d="M16 43c14-23 28-29 49-29 17 0 28 8 38 23h14v8H16z" fill="{color_hex}"/><path d="M32 25c8-8 14-10 23-10 12 0 22 4 29 10" fill="none" stroke="#fff6d8" stroke-width="3"/>'
         wheel = '<circle cx="34" cy="50" r="8" fill="#30414e"/><circle cx="83" cy="50" r="8" fill="#30414e"/><circle cx="110" cy="50" r="8" fill="#30414e"/>'
+    
     svg = f'''<svg xmlns="http://www.w3.org/2000/svg" width="{size}" height="{int(size*0.72)}" viewBox="0 0 130 70">
-      <defs><filter id="s"><feDropShadow dx="0" dy="2" stdDeviation="2" flood-opacity=".25"/></filter></defs>
+      <defs><filter id="s"><feDropShadow dx="0" dy="2" stdDeviation="2" flood-opacity=".3"/></filter></defs>
       <g filter="url(#s)">{body}{wheel}<path d="M8 56h110" stroke="#8a714b" stroke-width="2" stroke-linecap="round" stroke-dasharray="4 5"/><circle cx="16" cy="56" r="3" fill="#d9a441"/></g>
       <text x="65" y="67" text-anchor="middle" font-family="Nunito" font-size="8" font-weight="800" fill="#5e5343">{stage_km:,}+</text>
     </svg>'''
-    return svg, name
-
+    return svg
 
 def html_caravan_icon(km, color):
-    svg, _ = caravan_svg(km, color)
-    return f'<div class="caravan-marker">{svg}</div>'
-
+    return f'<div class="caravan-marker">{caravan_svg(km, color)}</div>'
 
 # ----------------------------
 # ROUTES
 # ----------------------------
-def parse_route_override(raw):
-    if not raw or str(raw).lower() == "nan":
-        return []
-    pts = []
-    for chunk in str(raw).split(";"):
-        chunk = chunk.strip()
-        m = re.match(r"\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*$", chunk)
-        if m:
-            pts.append([float(m.group(1)), float(m.group(2))])
-    return pts
-
-
 def smooth_curve(a, b, bends=18):
-    lat1, lon1 = a
-    lat2, lon2 = b
+    lat1, lon1 = a; lat2, lon2 = b
     points = []
-    dx = lon2 - lon1
-    dy = lat2 - lat1
+    dx = lon2 - lon1; dy = lat2 - lat1
     length = math.hypot(dx, dy) or 1
     nx, ny = -dy / length, dx / length
     bend = min(9.0, max(1.3, length * 0.08))
@@ -343,72 +240,6 @@ def smooth_curve(a, b, bends=18):
         lon = (1-t)**2 * lon1 + 2*(1-t)*t*c1[1] + t**2 * lon2
         points.append([lat, lon])
     return points
-
-
-def path_between(a, b):
-    ca = continent_guess(*a)
-    cb = continent_guess(*b)
-    pts = smooth_curve(a, b, bends=24)
-    return pts, (ca == cb)
-
-
-def continent_guess(lat, lon):
-    if lat < -10 and -85 < lon < -30: return "Güney Amerika"
-    if lat < -10 and 110 < lon < 180: return "Okyanusya"
-    if lat < -10 and -25 < lon < 55: return "Afrika"
-    if lat > 35 and -15 < lon < 50: return "Avrupa"
-    if lon < -35 and lat > 5: return "Kuzey Amerika"
-    if lon < -30 and lat <= 5: return "Güney Amerika"
-    if lon >= 50 or (lon >= 35 and lat > 0): return "Asya"
-    return "Avrupa"
-
-
-# ----------------------------
-# MAP JS/CSS
-# ----------------------------
-def install_map_behaviour(m):
-    map_name = m.get_name()
-    css = f"""
-    <style>
-      #{map_name} .leaflet-tile-pane {{ filter: saturate(.85) contrast(.98) brightness(1.02); }}
-      .book-marker {{
-        background: none !important;
-        border: none !important;
-        transition: opacity 0.3s ease !important;
-      }}
-      /* Hide labels when zoomed out */
-      #{map_name}.zoom-hide .book-marker {{
-        opacity: 0 !important;
-        pointer-events: none !important;
-      }}
-      /* Show labels when zoomed in */
-      #{map_name}.zoom-show .book-marker {{
-        opacity: 1 !important;
-        pointer-events: auto !important;
-      }}
-      #{map_name} .leaflet-control-zoom a {{ border-color:#d5c39c; color:#5c513f; background:#fffaf0; }}
-      #{map_name} .leaflet-control-layers {{ border:1px solid #dac79e; background:#fffaf0; color:#443d33; }}
-      .caravan-marker svg {{ display:block; }}
-    </style>
-    <script>
-    (function() {{
-      const map = {map_name};
-      function updateBookLabels() {{
-        const z = map.getZoom();
-        map.getContainer().classList.remove('zoom-hide', 'zoom-show');
-        if (z < 4) {{
-            map.getContainer().classList.add('zoom-hide');
-        }} else {{
-            map.getContainer().classList.add('zoom-show');
-        }}
-      }}
-      map.on('zoomend', updateBookLabels);
-      setTimeout(updateBookLabels, 250);
-    }})();
-    </script>
-    """
-    m.get_root().html.add_child(Element(css))
-
 
 # ----------------------------
 # APP DATA
@@ -420,13 +251,9 @@ except Exception as exc:
     students, books, records = pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
     data_error = str(exc)
 
-# Sidebar
 st.sidebar.markdown("# 🧭 Gezgin Karavanlar")
 st.sidebar.caption("4. Sınıf Okuma Macerası")
-page = st.sidebar.radio(
-    "Menü",
-    ["🌍 Dünya Haritası", "🎒 Kaşiflerim", "📚 Kitaplık", "📊 Sınıf Günlüğü"],
-)
+page = st.sidebar.radio("Menü", ["🌍 Dünya Haritası", "🎒 Kaşiflerim", "📚 Kitaplık", "📊 Sınıf Günlüğü"])
 st.sidebar.divider()
 if st.sidebar.button("🔄 Verileri yenile", use_container_width=True):
     st.cache_data.clear()
@@ -437,25 +264,15 @@ if data_error:
     st.error(f"Veriler okunamadı: {data_error}")
     st.stop()
 
-# Derived book mapping
 book_map = {str(r["_title"]): r for _, r in books.iterrows()}
-
-records = records.copy()
 records = records[records["_book"].isin(book_map.keys())].copy()
-records = records.merge(
-    books[["_title", "_lat", "_lon", "_km", "_kind", "_continent", "_mix", "_route", "_emoji"]],
-    left_on="_book", right_on="_title", how="left"
-)
-if not records["_date_sort"].isna().all():
-    records = records.sort_values(["_no", "_date_sort", "_book"], na_position="last")
-else:
-    records = records.sort_values(["_no", "_book"])
+records = records.merge(books[["_title", "_lat", "_lon", "_km", "_kind", "_continent", "_emoji"]], left_on="_book", right_on="_title", how="left")
+records = records.sort_values(["_no", "_book"])
 
 student_totals = records.groupby("_no")["_km"].sum().to_dict()
 students["_km"] = students["_no"].map(student_totals).fillna(0)
 students["_book_count"] = students["_no"].map(records["_no"].value_counts()).fillna(0).astype(int)
 
-# Class totals
 class_km = int(records["_km"].sum()) if not records.empty else 0
 class_books = int(len(records))
 
@@ -465,7 +282,7 @@ class_books = int(len(records))
 st.markdown(
     """
     <div class="hero">
-      <div class="eyebrow">4. SINIF · 2026–2027</div>
+      <div class="eyebrow">4. SINIF · Borsa İstanbul Şükran Ana İlkokulu</div>
       <h1>📚 Kitaplarla Dünyayı Keşfediyoruz</h1>
       <p>Her kitap bir durak. Her sayfa bir yolculuk. Her çocuk kendi macerasının kaşifi. 🧭</p>
     </div>
@@ -474,187 +291,119 @@ st.markdown(
 )
 
 # ----------------------------
-# HOME / MAP
+# PAGE: DÜNYA HARİTASI
 # ----------------------------
 if page == "🌍 Dünya Haritası":
-    # Filters
     c1, c2, c3 = st.columns([1.1, 1.0, 1.2])
     with c1:
-        students_options = ["Sınıfın tamamı"] + list(students["_no"].astype(str))
-        selected_student = st.selectbox("👤 Kaşif", students_options)
+        selected_student = st.selectbox("👤 Kaşif Seçin", ["Sınıfın tamamı"] + list(students["_name"].astype(str)))
     with c2:
-        kind_options = ["Tüm türler"] + sorted([x for x in books["_kind"].dropna().unique() if str(x).strip()])
-        selected_kind = st.selectbox("📖 Kitap türü", kind_options)
+        selected_kind = st.selectbox("📖 Kitap Türü", ["Tüm türler"] + sorted([x for x in books["_kind"].dropna().unique() if str(x).strip()]))
     with c3:
-        title_options = ["Tüm kitaplar"] + sorted(books["_title"].dropna().astype(str).tolist())
-        selected_title = st.selectbox("📍 Kitap / durak", title_options)
+        selected_title = st.selectbox("📍 Kitap Durağı", ["Tüm kitaplar"] + sorted(books["_title"].dropna().astype(str).tolist()))
 
     filtered_books = books.copy()
     if selected_kind != "Tüm türler":
-        filtered_books = filtered_books[filtered_books["_kind"] == selected_kind]
+        filtered_books = filtered_books[filtered_books["_kind"].str.contains(selected_kind, case=False, na=False)]
     if selected_title != "Tüm kitaplar":
         filtered_books = filtered_books[filtered_books["_title"] == selected_title]
 
     if selected_student != "Sınıfın tamamı":
-        map_no = selected_student
-        class_student_records = records[records["_no"] == map_no].copy()
+        student_no_selected = students[students["_name"] == selected_student].iloc[0]["_no"]
+        class_student_records = records[records["_no"] == student_no_selected].copy()
     else:
-        map_no = None
         class_student_records = records.copy()
 
-    # Metrics
-    total_km = int(students["_km"].sum())
-    total_books = int(students["_book_count"].sum())
-    all_world_goal = 40000
-    goal_pct = min(100, int(total_km / all_world_goal * 100)) if all_world_goal else 0
-
-    a,b,c,d = st.columns(4)
-    for col, number, label in [
-        (a, f"{total_km:,}", "🌍 sınıf kilometresi"),
-        (b, f"{total_books}", "📚 kitap yolculuğu"),
-        (c, f"{goal_pct}%", "🗺️ dünya turu"),
-        (d, f"{len(students)}", "🧒 kaşif"),
-    ]:
-        with col:
-            st.markdown(f'<div class="card metric-card"><div class="metric-number">{number}</div><div class="metric-label">{label}</div></div>', unsafe_allow_html=True)
-
-    st.markdown('<div class="section-title">🗺️ Masal Haritamız</div>', unsafe_allow_html=True)
-    st.caption("Yakınlaşınca kitap isimleri belirir. Karavanlar kilometre arttıkça aşama değiştirir.")
-
-    # MapTiler API Integration
+    # Map Initialization (Aquarelle without labels)
     tiles_url = f"https://api.maptiler.com/maps/aquarelle-v4/256/{{z}}/{{x}}/{{y}}.png?key={MAPTILER_API_KEY}"
-    m = folium.Map(location=[24, 15], zoom_start=2.35, min_zoom=1.7, max_zoom=7, tiles=tiles_url, attr="&copy; MapTiler &copy; OSM", control_scale=True)
-    install_map_behaviour(m)
+    m = folium.Map(location=[24, 15], zoom_start=2.35, min_zoom=1.7, max_zoom=7, tiles=tiles_url, attr="MapTiler", control_scale=True)
 
-    # Continental reading realms
-    realm_fg = folium.FeatureGroup(name="🌈 Kıta okuma bölgeleri", show=True)
-    for cont, coords in CONTINENT_POLYGONS.items():
-        style = CONTINENT_STYLE[cont]
-        folium.Polygon(
-            locations=coords,
-            color=style["color"],
-            weight=1.5,
-            opacity=0.55,
-            fill=True,
-            fill_color=style["fill"],
-            fill_opacity=0.22,
-            tooltip=f"{style['emoji']} {cont}: {style['label']}",
-        ).add_to(realm_fg)
-    realm_fg.add_to(m)
+    # GeoJSON Kıtalar (Güvenilir Kaynaktan, Sınır Çizgisiz Boyama)
+    GEOJSON_URL = "https://gist.githubusercontent.com/hrbrmstr/91ea5cc9474286c72838/raw/f3fde312c9b8168af6254ce1410dd4dda4a31941/continents.json"
+    def style_function(feature):
+        c_name = feature['properties'].get('CONTINENT', '')
+        # Mapping English GeoJSON names to our Turkish dictionary colors
+        name_map = {"Europe": "Avrupa", "Asia": "Asya", "Africa": "Afrika", "North America": "Kuzey Amerika", "South America": "Güney Amerika", "Oceania": "Okyanusya"}
+        tr_name = name_map.get(c_name, "")
+        fill_color = CONTINENT_STYLE.get(tr_name, {}).get("fill", "#e0e0e0")
+        return {'fillColor': fill_color, 'color': 'transparent', 'weight': 0, 'fillOpacity': 0.4}
 
-    # Book destinations
-    books_fg = folium.FeatureGroup(name="📚 Kitap durakları", show=True)
+    try:
+        geo_data = requests.get(GEOJSON_URL, verify=False, timeout=5).json()
+        folium.GeoJson(geo_data, name="Kıtalar", style_function=style_function).add_to(m)
+    except:
+        pass # Ağ kısıtlaması varsa hata vermeden haritayı yüklemeye devam et.
+
+    # Book Markers (Temiz, Yazısız Emoji Pinleri)
     for _, row in filtered_books.iterrows():
-        if pd.isna(row["_lat"]) or pd.isna(row["_lon"]):
-            continue
-        kind, cont = parse_book_metadata(row)
-        rgb = color_for_kind(kind)
-        label_color = rgba_hex(rgb)
-        short_title = str(row["_title"])
+        if pd.isna(row["_lat"]) or pd.isna(row["_lon"]): continue
+        rgb = color_for_kind(row["_kind"])
+        border_color = rgba_hex(rgb)
         
-        # Reduced font size and removed the default Leaflet white box via class_name="book-marker"
-        label_html = f'''
-          <div class="book-label" data-book-label="true" style="font-family:Nunito,sans-serif;font-weight:800;color:#31404b;background:rgba(255,250,240,.92);padding:2px 5px;border-radius:6px;border:1.5px solid {label_color};white-space:nowrap;text-align:center;font-size:10.5px;box-shadow:0 2px 6px rgba(40,30,15,.15);">
-             {str(row["_emoji"])} {short_title}
-          </div>'''
+        icon_html = f'<div class="emoji-marker" style="border-color: {border_color};">{row["_emoji"]}</div>'
+        popup_html = f"<div style='font-family:Nunito'><b>{row['_title']}</b><br>🌈 Tür: {row['_kind']}<br>🗺️ Kıta: {row['_continent']}<br>📄 Yolculuk: {int(row['_km'])} km</div>"
         
-        popup = folium.Popup(
-            f"<div style='font-family:Nunito'><b>{short_title}</b><br>🌈 Tür: {kind}<br>🗺️ Kıta: {cont}<br>📄 Yolculuk: {int(row['_km'])} km</div>",
-            max_width=280,
-        )
         folium.Marker(
             [row["_lat"], row["_lon"]],
-            icon=folium.DivIcon(html=label_html, class_name="book-marker"),
-            popup=popup,
-            tooltip=short_title,
-        ).add_to(books_fg)
-    books_fg.add_to(m)
+            icon=folium.DivIcon(html=icon_html, icon_anchor=(16, 16)),
+            popup=folium.Popup(popup_html, max_width=250),
+            tooltip=row["_title"],
+        ).add_to(m)
 
-    # Student trails
+    # Student Routes & Caravans
     if not class_student_records.empty:
         for student_no, group in class_student_records.groupby("_no"):
             student_row = students[students["_no"] == student_no].iloc[0]
-            student_color = str(student_row["_color"]) or "Turuncu"
-            color_map = {
-                "Mavi":"#4f88bd","Turuncu":"#df8b43","Mor":"#8c72a8","Kırmızı":"#c85d63",
-                "Yeşil":"#6d9b69","Sarı":"#d9a441","Pembe":"#cf7b98","Lacivert":"#4c638d",
-                "Açık Mavi":"#6ea9c9","Açık Yeşil":"#7ba77b","Gri":"#7e858b","Siyah":"#40464e",
-            }
-            caravan_color = color_map.get(student_color.title(), "#df8b43")
+            
+            color_map = {"Mavi":"#4f88bd","Turuncu":"#df8b43","Mor":"#8c72a8","Kırmızı":"#c85d63","Yeşil":"#6d9b69","Sarı":"#d9a441"}
+            caravan_color = color_map.get(str(student_row["_color"]).title(), "#df8b43")
+            
             route_points = []
             ordered = group.dropna(subset=["_lat","_lon"]).copy()
             if not ordered.empty:
                 previous = None
                 for _, book_row in ordered.iterrows():
                     current = [float(book_row["_lat"]), float(book_row["_lon"])]
-                    override = parse_route_override(book_row["_route"])
-                    if previous is None:
-                        route_points.extend(override if override else [current])
+                    if previous:
+                        route_points.extend(smooth_curve(previous, current))
                     else:
-                        if override:
-                            route_points.extend(override)
-                            route_points.append(current)
-                        else:
-                            segment, same_land = path_between(previous, current)
-                            route_points.extend(segment)
+                        route_points.append(current)
                     previous = current
 
+                # Rota Kalınlık ve Şeffaflık Ayarı (UX İyileştirmesi)
                 if len(route_points) > 1:
-                    # Main ribbon
+                    is_all = (selected_student == "Sınıfın tamamı")
                     folium.PolyLine(
-                        route_points,
-                        color=caravan_color,
-                        weight=7 if selected_student != "Sınıfın tamamı" else 4,
-                        opacity=0.18 if selected_student == "Sınıfın tamamı" else 0.24,
-                        line_cap="round",
-                    ).add_to(m)
-                    folium.PolyLine(
-                        route_points,
-                        color=caravan_color,
-                        weight=2.2 if selected_student != "Sınıfın tamamı" else 1.4,
-                        opacity=0.80 if selected_student != "Sınıfın tamamı" else 0.38,
-                        dash_array="2 10",
-                        line_cap="round",
+                        route_points, color=caravan_color,
+                        weight=3 if is_all else 6, opacity=0.3 if is_all else 0.8,
+                        dash_array="5 10" if is_all else None, line_cap="round"
                     ).add_to(m)
 
+                # Son Konuma Karavan İkonu
                 last = ordered.iloc[-1]
-                last_pos = [float(last["_lat"]), float(last["_lon"])]
                 km = float(student_row["_km"])
-                title, _, role, remaining, _ = caravan_stage(km)
-                icon_html = html_caravan_icon(km, caravan_color)
-                popup = folium.Popup(
-                    f"<div style='font-family:Nunito;min-width:200px'><b>🧭 {student_row['_name']}</b><br>🏆 {title}<br>🚐 {role}<br>🌍 {int(km):,} km<br>📚 {int(student_row['_book_count'])} kitap<br>📍 Son durak: {last['_title']}<br><small>Sonraki seviyeye: {int(remaining):,} km</small></div>",
-                    max_width=300,
-                )
+                title, _, role, remain, _ = caravan_stage(km)
+                
+                popup_text = f"<div style='font-family:Nunito;min-width:180px'><b>🧭 {student_row['_name']}</b><br>🏆 {title}<br>🌍 {int(km):,} km<br>📍 Son Durak: {last['_title']}</div>"
                 folium.Marker(
-                    last_pos,
-                    popup=popup,
-                    tooltip=f"{student_row['_name']} · {int(km):,} km",
-                    icon=folium.DivIcon(html=icon_html, class_name="caravan-marker", icon_size=(92,60), icon_anchor=(46,30)),
+                    [float(last["_lat"]), float(last["_lon"])],
+                    popup=folium.Popup(popup_text, max_width=250),
+                    tooltip=f"{student_row['_name']} ({int(km):,} km)",
+                    icon=folium.DivIcon(html=html_caravan_icon(km, caravan_color), icon_size=(92,60), icon_anchor=(46,30)),
                 ).add_to(m)
 
-    folium.LayerControl(collapsed=False).add_to(m)
-    st_folium(m, width=None, height=690, returned_objects=[])
-
-    # Goal card
-    current_pct = min(100, class_km / 40000 * 100)
-    st.markdown(
-        f'''<div class="card" style="margin-top:16px"><div class="eyebrow">SINIF ORTAK HEDEFİ</div><div style="font-family:Baloo 2;font-size:26px;font-weight:800;color:#31404e">🌍 Dünyanın çevresinde bir tur</div><div class="progress-shell"><div class="progress-bar" style="width:{current_pct:.1f}%"></div></div><div style="display:flex;justify-content:space-between;margin-top:7px;color:#766b59;font-weight:800;font-size:13px"><span>{class_km:,} km</span><span>40.000 km</span></div></div>''',
-        unsafe_allow_html=True,
-    )
+    st_folium(m, width=None, height=650, returned_objects=[])
 
 # ----------------------------
-# STUDENTS
+# PAGE: KAŞİFLERİM (Esnek Yapı)
 # ----------------------------
 elif page == "🎒 Kaşiflerim":
     st.markdown('<div class="section-title">🎒 Kaşiflerim</div>', unsafe_allow_html=True)
-    st.caption("Her öğrencinin toplam kilometresi arttıkça unvanı ve karavanı otomatik yükselir.")
-
-    search = st.text_input("🔎 Öğrenci ara", placeholder="Ad veya öğrenci no")
+    search = st.text_input("🔎 Öğrenci ara", placeholder="İsim yazın...")
+    
     view_df = students.copy()
     if search.strip():
-        q = search.strip().lower()
-        view_df = view_df[view_df["_name"].str.lower().str.contains(q, na=False) | view_df["_no"].str.lower().str.contains(q, na=False)]
+        view_df = view_df[view_df["_name"].str.contains(search.strip(), case=False, na=False)]
 
     cols = st.columns(3)
     for i, (_, row) in enumerate(view_df.sort_values("_km", ascending=False).iterrows()):
@@ -662,103 +411,104 @@ elif page == "🎒 Kaşiflerim":
             km = float(row["_km"])
             name, emoji, role, remain, threshold = caravan_stage(km)
             pct = 100 if remain == 0 else min(100, max(0, (km-threshold) / max(1, (km-remain)-threshold) * 100))
-            svg, _ = caravan_svg(km, "#" + "".join(f"{x:02x}" for x in COLORS.get(str(row["_color"]).strip().title(), COLORS["Genel"]))) if str(row["_color"]) in COLORS else caravan_svg(km, "#df8b43")
+            svg_color = {"Mavi":"#4f88bd","Turuncu":"#df8b43","Mor":"#8c72a8","Kırmızı":"#c85d63","Yeşil":"#6d9b69"}.get(str(row["_color"]).title(), "#df8b43")
+            
+            # Yükseklik kısıtlaması kaldırılmış esnek kutular
             st.markdown(
-                f'''<div class="card" style="min-height:250px;margin-bottom:15px"><div style="display:flex;justify-content:space-between"><div><div class="eyebrow">KAŞİF #{row['_no']}</div><div style="font-family:Baloo 2;font-weight:800;font-size:24px;color:#2f3e4d">{row['_name']}</div></div><div style="font-size:28px">{emoji}</div></div><div style="margin:12px 0 2px">{svg}</div><div style="font-weight:800;color:#5a5147">🏆 {name}</div><div class="small-muted">{role} · {int(km):,} km · {int(row['_book_count'])} kitap</div><div class="progress-shell"><div class="progress-bar" style="width:{min(100,pct):.1f}%"></div></div><div class="small-muted" style="margin-top:5px">Sonraki seviyeye {int(remain):,} km</div></div>''',
-                unsafe_allow_html=True,
+                f'''<div class="card" style="margin-bottom:20px;">
+                <div style="display:flex;justify-content:space-between">
+                    <div><div class="eyebrow">KAŞİF</div><div style="font-family:Baloo 2;font-weight:800;font-size:22px;">{row['_name']}</div></div>
+                    <div style="font-size:32px">{emoji}</div>
+                </div>
+                <div style="margin:10px 0;">{caravan_svg(km, svg_color, size=90)}</div>
+                <div style="font-weight:800;font-size:18px;">🏆 {name}</div>
+                <div class="small-muted">{role} · {int(km):,} km · {int(row['_book_count'])} kitap</div>
+                <div class="progress-shell"><div class="progress-bar" style="width:{min(100,pct):.1f}%"></div></div>
+                <div class="small-muted" style="margin-top:5px">Sonraki seviyeye {int(remain):,} km</div>
+                </div>''',
+                unsafe_allow_html=True
             )
 
 # ----------------------------
-# LIBRARY
+# PAGE: KİTAPLIK (Gelişmiş Filtre)
 # ----------------------------
 elif page == "📚 Kitaplık":
     st.markdown('<div class="section-title">📚 Dünya Okur Kütüphanesi</div>', unsafe_allow_html=True)
-    st.caption("Kitapların konumu, türü ve kilometresi tek bir tablodan yönetilir. İsterseniz Google Sheet'e yeni sütunlar ekleyerek sistemi genişletebilirsiniz.")
-
     c1, c2 = st.columns(2)
+    
+    unique_kinds = sorted(list(set(k.strip() for sublist in books["_kind"].dropna().astype(str).str.split(',') for k in sublist if k.strip())))
     with c1:
-        kind = st.selectbox("Tür", ["Tümü"] + sorted(books["_kind"].dropna().astype(str).unique().tolist()))
+        kind = st.selectbox("Tür Filtresi", ["Tümü"] + unique_kinds)
     with c2:
-        cont = st.selectbox("Kıta", ["Tümü"] + sorted(books["_continent"].dropna().astype(str).unique().tolist()))
+        cont = st.selectbox("Kıta Filtresi", ["Tümü"] + sorted(books["_continent"].dropna().astype(str).unique().tolist()))
+    
     lib = books.copy()
+    # "İçerir" (Contains) mantığıyla filtreleme düzeltildi
     if kind != "Tümü":
-        lib = lib[lib["_kind"] == kind]
+        lib = lib[lib["_kind"].str.contains(kind, case=False, na=False)]
     if cont != "Tümü":
-        lib = lib[lib["_continent"] == cont]
+        lib = lib[lib["_continent"].str.contains(cont, case=False, na=False)]
 
     read_counts = records["_book"].value_counts().to_dict()
     book_cols = st.columns(2)
     for i, (_, row) in enumerate(lib.sort_values("_title").iterrows()):
-        kind_name, continent = parse_book_metadata(row)
-        rgb = color_for_kind(kind_name)
-        cover = '#%02x%02x%02x' % rgb
+        rgb = color_for_kind(row["_kind"])
+        cover = rgba_hex(rgb)
         count = int(read_counts.get(row["_title"], 0))
         with book_cols[i % 2]:
             st.markdown(
-                f'''<div class="book-card"><div class="book-cover" style="background:{cover}">{row['_emoji']}</div><div><h4>{row['_title']}</h4><p>{kind_name} · {continent} · {int(row['_km'])} km</p><p>👣 {count} kaşif bu durağı ziyaret etti</p></div></div>''',
+                f'''<div class="book-card"><div class="book-cover" style="background:{cover}">{row['_emoji']}</div>
+                <div><h4>{row['_title']}</h4><p>{row['_kind']} · {row['_continent']} · {int(row['_km'])} km</p>
+                <p style="color:#df8b43 !important; font-weight:700;">👣 {count} kaşif ziyaret etti</p></div></div>''',
                 unsafe_allow_html=True,
             )
 
 # ----------------------------
-# STATS
+# PAGE: SINIF GÜNLÜĞÜ
 # ----------------------------
 elif page == "📊 Sınıf Günlüğü":
     st.markdown('<div class="section-title">📊 Sınıf Okuma Günlüğü</div>', unsafe_allow_html=True)
     if records.empty:
-        st.info("Henüz kayıt yok. İlk kitap kaydı eklendiğinde sınıf günlüğü burada oluşacak.")
+        st.info("Kayıt bulunamadı. İlk kitap okunduğunda veriler burada belirecektir.")
         st.stop()
 
-    # KPIs
-    genre_counts = records["_kind"].replace("nan", "Genel").value_counts()
     popular_book = records["_book"].value_counts().index[0] if not records.empty else "—"
     top_student = students.sort_values("_km", ascending=False).iloc[0]
 
+    # Sadeleştirilmiş, okunabilir Metrik Kartları
     c1,c2,c3,c4 = st.columns(4)
-    metrics = [
-        (f"{class_km:,}", "🌍 toplam km"),
-        (f"{class_books}", "📚 kitap yolculuğu"),
-        (popular_book, "⭐ en çok keşfedilen kitap"),
-        (f"{top_student['_name']}", "🧭 en ileri kaşif"),
-    ]
+    metrics = [(f"{class_km:,}", "Dünya Etrafında KM"), (f"{class_books}", "Okunan Kitap"), (popular_book, "Popüler Durak"), (f"{top_student['_name']}", "Lider Kaşif")]
     for col, (n,l) in zip([c1,c2,c3,c4], metrics):
         with col:
-            st.markdown(f'<div class="card metric-card"><div class="metric-number" style="font-size:{25 if len(str(n))>16 else 34}px">{n}</div><div class="metric-label">{l}</div></div>', unsafe_allow_html=True)
+            font_sz = 26 if len(str(n)) > 12 else 34
+            st.markdown(f'<div class="card metric-card"><div class="metric-number" style="font-size:{font_sz}px">{n}</div><div class="metric-label">{l}</div></div>', unsafe_allow_html=True)
 
+    st.markdown("<br>", unsafe_allow_html=True)
     left, right = st.columns(2)
     with left:
-        st.markdown("#### 🌈 Türlere göre keşif")
-        g = genre_counts.reset_index()
-        g.columns = ["Tür", "Okunma"]
-        fig = px.pie(g, values="Okunma", names="Tür", hole=.48)
-        fig.update_layout(margin=dict(l=5,r=5,t=5,b=5), paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", legend_title=None)
-        st.plotly_chart(fig, use_container_width=True)
+        st.markdown("#### 🏆 En Çok Ziyaret Edilen Duraklar")
+        top_books = records["_book"].value_counts().head(5).reset_index()
+        top_books.columns = ["Kitap", "Ziyaret"]
+        fig3 = px.bar(top_books, x="Ziyaret", y="Kitap", orientation="h", color="Ziyaret", color_continuous_scale="Oryel")
+        fig3.update_layout(margin=dict(l=5,r=5,t=5,b=5), paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", yaxis={'categoryorder':'total ascending'})
+        st.plotly_chart(fig3, use_container_width=True)
 
     with right:
-        st.markdown("#### 🧭 Kaşif kilometreleri")
-        rank = students[["_name","_km"]].sort_values("_km", ascending=True)
-        fig2 = px.bar(rank, x="_km", y="_name", orientation="h")
-        fig2.update_layout(margin=dict(l=10,r=10,t=5,b=5), paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", xaxis_title="KM", yaxis_title=None)
+        st.markdown("#### 🧭 En Çok KM Yapan Kaşifler")
+        rank = students[["_name","_km"]].sort_values("_km", ascending=False).head(5)
+        fig2 = px.bar(rank, x="_km", y="_name", orientation="h", color="_km", color_continuous_scale="Teal")
+        fig2.update_layout(margin=dict(l=5,r=5,t=5,b=5), paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", yaxis={'categoryorder':'total ascending'})
         st.plotly_chart(fig2, use_container_width=True)
 
-    # Yeni eklenen İstatistik Kartı: Top 5 Kitap
-    st.markdown("#### 🏆 En Çok Ziyaret Edilen Duraklar (Kitaplar)")
-    top_books = records["_book"].value_counts().head(5).reset_index()
-    top_books.columns = ["Kitap", "Ziyaret"]
-    fig3 = px.bar(top_books, x="Kitap", y="Ziyaret", color="Ziyaret", color_continuous_scale="Oryel")
-    fig3.update_layout(margin=dict(l=10,r=10,t=5,b=5), paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)")
-    st.plotly_chart(fig3, use_container_width=True)
-
-    st.markdown("#### 🏅 Kaşif rozetleri")
+    st.markdown("#### 🏅 Kazanılan Sınıf Rozetleri")
     badges = [
         ("📖", "İlk Kitap", int((students["_book_count"] >= 1).sum())),
         ("🧭", "500 KM Kaşifi", int((students["_km"] >= 500).sum())),
         ("🌍", "1.000 KM Gezgini", int((students["_km"] >= 1000).sum())),
-        ("🚀", "5.000 KM Kıta Kaşifi", int((students["_km"] >= 5000).sum())),
-        ("🌟", "10.000 KM Dünya Kaşifi", int((students["_km"] >= 10000).sum())),
+        ("🚀", "5.000 KM Kıta", int((students["_km"] >= 5000).sum())),
+        ("🌟", "10.000 KM Efsane", int((students["_km"] >= 10000).sum())),
     ]
     badge_cols = st.columns(len(badges))
     for col, (emo, label, count) in zip(badge_cols, badges):
         with col:
-            st.markdown(f'<div class="badge"><div class="emoji">{emo}</div><b>{label}</b><span class="small-muted">{count} öğrenci</span></div>', unsafe_allow_html=True)
-
-st.markdown('<div class="footer-note">🧭 Gezgin Karavanlar · Okuma bir yarış değil, keşif yolculuğudur.</div>', unsafe_allow_html=True)
+            st.markdown(f'<div class="badge"><div class="emoji">{emo}</div><b>{label}</b><span class="small-muted">{count} öğrenci rozeti aldı</span></div>', unsafe_allow_html=True)

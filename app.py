@@ -4,10 +4,6 @@ import folium
 from streamlit_folium import st_folium
 import plotly.express as px
 import requests
-import urllib3
-
-# Güvenlik duvarı ve sertifika uyarılarını gizle (Özellikle kısıtlı ağlar için)
-urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 # --- SAYFA YAPILANDIRMASI ---
 st.set_page_config(
@@ -21,6 +17,9 @@ st.set_page_config(
 OGRENCILER_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vTjaErnK01S9u8xTncNbrOBKdqbvFdp90XlL8zTZddMjDWdFVbj130XnhmBuIbGSpX-jBXkpZ9FZ2tk/pub?gid=0&single=true&output=csv"
 KITAPLAR_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vTjaErnK01S9u8xTncNbrOBKdqbvFdp90XlL8zTZddMjDWdFVbj130XnhmBuIbGSpX-jBXkpZ9FZ2tk/pub?gid=1390307822&single=true&output=csv"
 KAYITLAR_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vTjaErnK01S9u8xTncNbrOBKdqbvFdp90XlL8zTZddMjDWdFVbj130XnhmBuIbGSpX-jBXkpZ9FZ2tk/pub?gid=509265349&single=true&output=csv"
+
+# --- HARİTA API AYARI ---
+MAPTILER_API_KEY = "EpjYdmP1Sas39ynJVbrR"
 
 # --- RENK ÇEVİRİ SÖZLÜĞÜ ---
 RENK_SOZLUGU = {
@@ -103,15 +102,16 @@ if sayfa == "🗺️ Dünya Haritası ve Keşifler":
         kitap_listesi = ["Tüm Kitaplar / Şehirler"] + sorted(list(df_kitap['Kitap_Adi_Sehir'].dropna().unique()))
         secilen_kitap = st.selectbox("📚 Kitap / Şehir Seçin:", kitap_listesi)
 
-    # API İstemeyen ve Üzerinde Hiçbir Yazı Olmayan Özel Harita Bağlantısı
+    # API Kontrollü Özel Harita (Ülke/Şehir isimleri olmayan temiz altlık)
+    tiles_url = f"https://api.maptiler.com/maps/dataviz-light/{{z}}/{{x}}/{{y}}.png?key={MAPTILER_API_KEY}"
     m = folium.Map(
         location=[25, 10], 
         zoom_start=2, 
-        tiles="https://{s}.basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}{r}.png",
-        attr="&copy; OpenStreetMap contributors &copy; CARTO"
+        tiles=tiles_url,
+        attr="&copy; MapTiler &copy; OpenStreetMap contributors"
     )
 
-    # Kıtaları Renklendirme (Ağ engellerini aşmak için verify=False eklendi)
+    # Kıtaları Renklendirme (Doğrudan URL üzerinden çekim)
     KITALAR_GEOJSON_URL = "https://gist.githubusercontent.com/hrbrmstr/91ea5cc9474286c72838/raw/f3fde312c9b8168af6254ce1410dd4dda4a31941/continents.json"
     
     def kita_stili(feature):
@@ -128,11 +128,10 @@ if sayfa == "🗺️ Dünya Haritası ve Keşifler":
         }
 
     try:
-        response = requests.get(KITALAR_GEOJSON_URL, verify=False, timeout=10)
-        geo_data = response.json()
+        geo_data = requests.get(KITALAR_GEOJSON_URL).json()
         folium.GeoJson(geo_data, name="Kıtalar", style_function=kita_stili).add_to(m)
     except Exception as e:
-        st.warning("Ağ kısıtlaması nedeniyle kıta renkleri indirilemedi, harita renksiz olarak devam ediyor.")
+        st.warning(f"Kıtalar yüklenirken bir sorun oluştu: {e}")
 
     # Kitapları (Şehirleri) Metin Olarak Ekleme
     filtreli_kitaplar = df_kitap.copy()
